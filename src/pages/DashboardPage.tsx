@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { format, subDays, differenceInDays } from 'date-fns';
 import {
   Eye,
@@ -61,6 +61,38 @@ export default function DashboardPage() {
   const { data, chartData, kpi, loading: dataLoading, setAdsData } = useAdsData();
   const { syncAds, syncing, result, error: syncError } = useSyncAds();
 
+  // Guard to prevent duplicate auto-sync calls
+  const lastSyncKey = useRef('');
+
+  const performSync = useCallback(async () => {
+    if (!selectedShop || !dateRange.from || !dateRange.to || syncing) return;
+
+    const result = await syncAds({
+      shop_id: selectedShop.shopee_shop_id,
+      start_date: format(dateRange.from, 'yyyy-MM-dd'),
+      end_date: format(dateRange.to, 'yyyy-MM-dd'),
+    });
+
+    if (result.success && result.records) {
+      setAdsData(result.records);
+    }
+  }, [selectedShop, dateRange, syncing, syncAds, setAdsData]);
+
+  // Auto-sync when shop is connected and date range changes
+  useEffect(() => {
+    if (!selectedShop || !dateRange.from || !dateRange.to) return;
+
+    const days = differenceInDays(dateRange.to, dateRange.from);
+    if (days > 30) return; // Skip auto-sync for long ranges
+
+    // Create a unique key for this sync request to avoid duplicates
+    const syncKey = `${selectedShop.shopee_shop_id}-${format(dateRange.from, 'yyyy-MM-dd')}-${format(dateRange.to, 'yyyy-MM-dd')}`;
+    if (lastSyncKey.current === syncKey) return;
+
+    lastSyncKey.current = syncKey;
+    performSync();
+  }, [selectedShop, dateRange, performSync]);
+
   const handleSync = useCallback(() => {
     if (!selectedShop || !dateRange.from || !dateRange.to) return;
 
@@ -70,25 +102,10 @@ export default function DashboardPage() {
       return;
     }
 
+    // Reset guard so manual sync always works
+    lastSyncKey.current = '';
     performSync();
-  }, [selectedShop, dateRange]);
-
-  const performSync = async () => {
-    if (!selectedShop || !dateRange.from || !dateRange.to) return;
-
-    const result = await syncAds({
-      shop_id: selectedShop.shopee_shop_id,
-      start_date: format(dateRange.from, 'yyyy-MM-dd'),
-      end_date: format(dateRange.to, 'yyyy-MM-dd'),
-    });
-
-    if (result.success && result.records) {
-      // Use records directly from Shopee API response
-      setAdsData(result.records);
-    }
-  };
-
-
+  }, [selectedShop, dateRange, performSync]);
 
   const canSync = selectedShop && dateRange.from && dateRange.to;
 
