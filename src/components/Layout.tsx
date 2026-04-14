@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Store,
@@ -7,11 +7,15 @@ import {
   Menu,
   X,
   Rocket,
+  Users,
+  LogOut,
+  User as UserIcon
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { useAuth } from '@/contexts/AuthContext';
 
-const navItems = [
+const commonNavItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/orders', icon: ShoppingBag, label: 'Orders' },
   { to: '/shops', icon: Store, label: 'Shops' },
@@ -19,6 +23,18 @@ const navItems = [
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { user, profile, isAdmin, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate('/login');
+  };
+
+  const navItems = [...commonNavItems];
+  if (isAdmin) {
+    navItems.push({ to: '/members', icon: Users, label: 'Team Members' });
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
@@ -88,14 +104,48 @@ export default function Layout() {
           ))}
         </nav>
 
-        {/* Footer */}
-        <div className="px-4 py-4">
-          <div className="glass-card rounded-xl p-3">
-            <p className="text-xs text-muted-foreground">
-              Region: <span className="text-foreground font-medium">Indonesia 🇮🇩</span>
+        {/* User & Footer Area */}
+        <div className="p-4 mt-auto">
+          {user && (
+            <div className="glass-card rounded-xl p-3 mb-3 border border-white/5 bg-white/5">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center border border-primary/30">
+                  <UserIcon className="h-4 w-4 text-primary" />
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <p className="text-sm font-medium truncate text-foreground">
+                    {user.email}
+                  </p>
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    {profile?.role || 'Member'}
+                  </p>
+                </div>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="w-full text-xs h-8 border-white/10 hover:bg-white/10 text-muted-foreground hover:text-foreground"
+                onClick={handleLogout}
+              >
+                <LogOut className="h-3 w-3 mr-2" />
+                Logout
+              </Button>
+            </div>
+          )}
+          
+          <div className="glass-card rounded-xl p-3 border border-white/5">
+            <p className="text-xs text-muted-foreground flex justify-between items-center">
+              <span>Region:</span> 
+              <span className="text-foreground font-medium flex items-center gap-1">
+                ID 🇮🇩
+              </span>
             </p>
-            <p className="text-xs text-muted-foreground mt-1">
-              API: <span className="text-accent font-medium text-[11px]">partner.shopeemobile.com</span>
+            <p className="text-[11px] text-muted-foreground mt-1 flex justify-between items-center">
+              <span>DB:</span>
+              <span className="text-accent font-medium flex items-center gap-1">
+                <div className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+                Cloud
+              </span>
             </p>
           </div>
         </div>
@@ -103,20 +153,18 @@ export default function Layout() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Top bar */}
-        <header className="flex items-center gap-4 border-b border-border px-4 py-3 lg:px-6">
+        {/* Top bar (mobile only) */}
+        <header className="lg:hidden flex items-center gap-4 border-b border-border px-4 py-3">
           <Button
             variant="ghost"
             size="icon"
-            className="lg:hidden"
             onClick={() => setSidebarOpen(true)}
           >
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex-1" />
-          <div className="flex items-center gap-2">
-            <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
-            <span className="text-xs text-muted-foreground">Local DB</span>
+          <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
+            <UserIcon className="h-4 w-4 text-primary" />
           </div>
         </header>
 
@@ -128,3 +176,4 @@ export default function Layout() {
     </div>
   );
 }
+

@@ -4,18 +4,28 @@ import DashboardPage from '@/pages/DashboardPage';
 import ShopsPage from '@/pages/ShopsPage';
 import OrdersPage from '@/pages/OrdersPage';
 import CallbackPage from '@/pages/CallbackPage';
+import LoginPage from '@/pages/LoginPage';
+import MembersPage from '@/pages/MembersPage'; // Will create this next
+import ProtectedRoute from '@/components/ProtectedRoute';
+import { AuthProvider } from '@/contexts/AuthContext';
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/orders" element={<OrdersPage />} />
-          <Route path="/shops" element={<ShopsPage />} />
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
           <Route path="/callback" element={<CallbackPage />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+          
+          <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/orders" element={<OrdersPage />} />
+            <Route path="/shops" element={<ShopsPage />} />
+            {/* Will make this adminOnly later */}
+            <Route path="/members" element={<ProtectedRoute adminOnly><MembersPage /></ProtectedRoute>} /> 
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
