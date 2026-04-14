@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { createClient } from '@supabase/supabase-js';
 import { PARTNER_ID, API_HOST, generateSign } from './_lib/shopee.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -84,7 +85,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         res.setHeader('Access-Control-Allow-Origin', '*');
         return res.status(500).json({ success: false, error: 'Database caching skipped: Missing SUPABASE_SERVICE_ROLE_KEY in Vercel.' });
       } else {
-        const { createClient } = require('@supabase/supabase-js');
         const supabaseAdmin = createClient(
           process.env.VITE_SUPABASE_URL,
           process.env.SUPABASE_SERVICE_ROLE_KEY
