@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   Store,
   Plus,
@@ -31,21 +31,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import {
-  getAuthUrl,
-  loadTokens,
-  clearTokens,
-  isTokenExpired,
-  type ShopeeTokens,
-} from '@/lib/shopee-client';
+import { getAuthUrl, clearTokens } from '@/lib/shopee-client';
+import { useShops } from '@/hooks/useShops';
+import { supabase } from '@/lib/supabase';
+import type { Shop } from '@/types';
 
 export default function ShopsPage() {
   const [connectLoading, setConnectLoading] = useState(false);
-  const [tokens, setTokens] = useState<ShopeeTokens | null>(null);
-
-  useEffect(() => {
-    setTokens(loadTokens());
-  }, []);
+  const { shops, fetchShops, loading } = useShops();
 
   const handleConnectShop = async () => {
     setConnectLoading(true);
@@ -58,21 +51,27 @@ export default function ShopsPage() {
     }
   };
 
-  const handleDisconnect = () => {
-    clearTokens();
-    setTokens(null);
+  const handleDisconnect = async (shop: Shop) => {
+    try {
+      await supabase.from('shops').delete().eq('shopee_shop_id', shop.shopee_shop_id);
+      clearTokens();
+      await fetchShops();
+    } catch (err) {
+      console.error('Failed to disconnect shop', err);
+    }
   };
 
-  const getTokenStatus = (t: ShopeeTokens) => {
-    if (isTokenExpired(t)) {
+  const getTokenStatus = (s: Shop) => {
+    if (!s.expired_at) return { label: 'No Token', variant: 'secondary' as const, icon: Clock };
+    if (new Date() > new Date(s.expired_at)) {
       return { label: 'Token Expired', variant: 'secondary' as const, icon: Clock };
     }
     return { label: 'Connected', variant: 'default' as const, icon: CheckCircle2 };
   };
 
-  const formatExpiry = (t: ShopeeTokens) => {
-    const expiresAt = new Date((t.saved_at + t.expire_in) * 1000);
-    return expiresAt.toLocaleString('id-ID', {
+  const formatExpiry = (s: Shop) => {
+    if (!s.expired_at) return 'N/A';
+    return new Date(s.expired_at).toLocaleString('id-ID', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -81,8 +80,9 @@ export default function ShopsPage() {
     });
   };
 
-  const formatSavedAt = (t: ShopeeTokens) => {
-    return new Date(t.saved_at * 1000).toLocaleString('id-ID', {
+  const formatSavedAt = (s: Shop) => {
+    if (!s.updated_at) return 'N/A';
+    return new Date(s.updated_at).toLocaleString('id-ID', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -163,8 +163,13 @@ export default function ShopsPage() {
         </Dialog>
       </div>
 
-      {/* Connected Shop Card (from localStorage) */}
-      {!tokens ? (
+      {loading ? (
+        <Card className="glass-card">
+          <CardContent className="py-16 text-center">
+             <div className="text-sm text-muted-foreground">Loading shops...</div>
+          </CardContent>
+        </Card>
+      ) : shops.length === 0 ? (
         <Card className="glass-card">
           <CardContent className="py-16 text-center">
             <div className="h-16 w-16 rounded-2xl bg-muted/50 flex items-center justify-center mx-auto mb-4">
@@ -179,11 +184,11 @@ export default function ShopsPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {(() => {
-            const status = getTokenStatus(tokens);
+          {shops.map(shop => {
+            const status = getTokenStatus(shop);
             const StatusIcon = status.icon;
             return (
-              <Card className="glass-card glass-card-hover gradient-border animate-slide-up overflow-hidden">
+              <Card key={shop.id} className="glass-card glass-card-hover gradient-border animate-slide-up overflow-hidden">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
@@ -191,9 +196,9 @@ export default function ShopsPage() {
                         <Store className="h-5 w-5 text-primary" />
                       </div>
                       <div>
-                        <CardTitle className="text-base">Shopee Shop</CardTitle>
+                        <CardTitle className="text-base">{shop.name}</CardTitle>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          ID: {tokens.shop_id}
+                          ID: {shop.shopee_shop_id}
                         </p>
                       </div>
                     </div>
@@ -207,11 +212,11 @@ export default function ShopsPage() {
                   <div className="space-y-2 mb-4">
                     <p className="text-xs text-muted-foreground">
                       Token expires:{' '}
-                      <span className="text-foreground">{formatExpiry(tokens)}</span>
+                      <span className="text-foreground">{formatExpiry(shop)}</span>
                     </p>
                     <p className="text-xs text-muted-foreground">
                       Connected:{' '}
-                      <span className="text-foreground">{formatSavedAt(tokens)}</span>
+                      <span className="text-foreground">{formatSavedAt(shop)}</span>
                     </p>
                   </div>
 
@@ -230,14 +235,14 @@ export default function ShopsPage() {
                       <AlertDialogHeader>
                         <AlertDialogTitle>Disconnect this shop?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          This will clear all stored tokens. You can reconnect later through OAuth.
+                          This will remove the shop and clear its tokens. You can reconnect later through OAuth.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel className="border-border">Cancel</AlertDialogCancel>
                         <AlertDialogAction
                           className="bg-destructive text-white"
-                          onClick={handleDisconnect}
+                          onClick={() => handleDisconnect(shop)}
                         >
                           Disconnect
                         </AlertDialogAction>
@@ -247,7 +252,7 @@ export default function ShopsPage() {
                 </CardContent>
               </Card>
             );
-          })()}
+          })}
         </div>
       )}
     </div>
