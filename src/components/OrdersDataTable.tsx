@@ -22,7 +22,9 @@ export default function OrdersDataTable({ orders, loading }: OrdersDataTableProp
     return (
       order.order_sn.toLowerCase().includes(term) ||
       order.order_status.toLowerCase().includes(term) ||
-      order.payment_method.toLowerCase().includes(term)
+      order.payment_method.toLowerCase().includes(term) ||
+      order.product_name.toLowerCase().includes(term) ||
+      order.sku.toLowerCase().includes(term)
     );
   });
 
@@ -33,6 +35,8 @@ export default function OrdersDataTable({ orders, loading }: OrdersDataTableProp
     const dataForExport = filteredOrders.map((order) => ({
       'Order SN': order.order_sn,
       'Tanggal': format(new Date(order.create_time), 'dd MMM yyyy HH:mm'),
+      'Nama Produk': order.product_name,
+      'SKU': order.sku,
       'Status': order.order_status,
       'Total Jumlah': order.total_amount,
       'Jenis Pembayaran': order.payment_method,
@@ -64,7 +68,7 @@ export default function OrdersDataTable({ orders, loading }: OrdersDataTableProp
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Cari SN, Status, Pembayaran..."
+              placeholder="Cari SN, Produk, SKU, Status..."
               className="pl-9 w-[250px] bg-background/50 border-white/10"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -90,9 +94,11 @@ export default function OrdersDataTable({ orders, loading }: OrdersDataTableProp
                 <tr>
                   <th className="px-4 py-3 font-medium">Order SN</th>
                   <th className="px-4 py-3 font-medium">Waktu</th>
+                  <th className="px-4 py-3 font-medium">Nama Produk</th>
+                  <th className="px-4 py-3 font-medium">SKU</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Pembayaran</th>
-                  <th className="px-4 py-3 font-medium text-right">Total Jumlah (Rp)</th>
+                  <th className="px-4 py-3 font-medium text-right">Total (Rp)</th>
                   <th className="px-4 py-3 font-medium">Kurir</th>
                 </tr>
               </thead>
@@ -102,6 +108,8 @@ export default function OrdersDataTable({ orders, loading }: OrdersDataTableProp
                     <tr key={i} className="animate-pulse">
                       <td className="px-4 py-4"><div className="h-4 w-24 bg-white/10 rounded"></div></td>
                       <td className="px-4 py-4"><div className="h-4 w-32 bg-white/10 rounded"></div></td>
+                      <td className="px-4 py-4"><div className="h-4 w-40 bg-white/10 rounded"></div></td>
+                      <td className="px-4 py-4"><div className="h-4 w-20 bg-white/10 rounded"></div></td>
                       <td className="px-4 py-4"><div className="h-5 w-20 bg-white/10 rounded-full"></div></td>
                       <td className="px-4 py-4"><div className="h-4 w-20 bg-white/10 rounded"></div></td>
                       <td className="px-4 py-4"><div className="h-4 w-16 bg-white/10 rounded ml-auto"></div></td>
@@ -114,6 +122,12 @@ export default function OrdersDataTable({ orders, loading }: OrdersDataTableProp
                       <td className="px-4 py-3 font-medium">{order.order_sn}</td>
                       <td className="px-4 py-3 text-muted-foreground">
                         {format(new Date(order.create_time), 'dd MMM yyyy, HH:mm')}
+                      </td>
+                      <td className="px-4 py-3 max-w-[200px] truncate" title={order.product_name}>
+                        {order.product_name}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {order.sku}
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant="outline" className={`border-0 ${getStatusColor(order.order_status)}`}>
@@ -133,7 +147,7 @@ export default function OrdersDataTable({ orders, loading }: OrdersDataTableProp
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                    <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
                       {searchTerm ? 'Tidak ada pesanan yang sesuai pencarian' : 'Belum ada data pesanan'}
                     </td>
                   </tr>

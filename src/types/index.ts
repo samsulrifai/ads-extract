@@ -62,6 +62,8 @@ export interface Order {
   shipping_carrier: string;
   payment_method: string;
   item_count: number;
+  product_name: string;
+  sku: string;
 }
 
 export interface SyncOrdersResponse {

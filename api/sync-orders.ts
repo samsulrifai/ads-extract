@@ -55,15 +55,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       if (data && data.response && data.response.order_list) {
-        const transformed = data.response.order_list.map((order: any) => ({
-          order_sn: order.order_sn,
-          create_time: new Date(order.create_time * 1000).toISOString(),
-          order_status: order.order_status,
-          total_amount: order.total_amount,
-          shipping_carrier: order.shipping_carrier || '-',
-          payment_method: order.payment_method || '-',
-          item_count: order.item_list ? order.item_list.length : 0,
-        }));
+        const transformed = data.response.order_list.map((order: any) => {
+          const items = order.item_list || [];
+          const productNames = items.map((item: any) => item.item_name || '').filter(Boolean).join(', ');
+          const skus = items.map((item: any) => item.model_sku || item.item_sku || '').filter(Boolean).join(', ');
+
+          return {
+            order_sn: order.order_sn,
+            create_time: new Date(order.create_time * 1000).toISOString(),
+            order_status: order.order_status,
+            total_amount: order.total_amount,
+            shipping_carrier: order.shipping_carrier || '-',
+            payment_method: order.payment_method || '-',
+            item_count: items.length,
+            product_name: productNames || '-',
+            sku: skus || '-',
+          };
+        });
         records.push(...transformed);
       }
     }
