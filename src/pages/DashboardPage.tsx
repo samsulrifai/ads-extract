@@ -35,6 +35,8 @@ import KPICard from '@/components/KPICard';
 import { useShops } from '@/hooks/useShops';
 import { useAdsData } from '@/hooks/useAdsData';
 import { useSyncAds } from '@/hooks/useSyncAds';
+import { useOrders } from '@/hooks/useOrders';
+import OrdersDataTable from '@/components/OrdersDataTable';
 import type { DateRange } from '@/types';
 
 const formatCurrency = (value: number) => {
@@ -60,23 +62,29 @@ export default function DashboardPage() {
   const { shops, selectedShop } = useShops();
   const { data, chartData, kpi, loading: dataLoading, setAdsData } = useAdsData();
   const { syncAds, syncing, result, error: syncError } = useSyncAds();
+  const { orders, fetchOrders, syncing: ordersSyncing } = useOrders();
 
   // Guard to prevent duplicate auto-sync calls
   const lastSyncKey = useRef('');
 
   const performSync = useCallback(async () => {
-    if (!selectedShop || !dateRange.from || !dateRange.to || syncing) return;
+    if (!selectedShop || !dateRange.from || !dateRange.to || syncing || ordersSyncing) return;
 
-    const result = await syncAds({
+    const request = {
       shop_id: selectedShop.shopee_shop_id,
       start_date: format(dateRange.from, 'yyyy-MM-dd'),
       end_date: format(dateRange.to, 'yyyy-MM-dd'),
-    });
+    };
 
-    if (result.success && result.records) {
-      setAdsData(result.records);
+    const [adsResult] = await Promise.all([
+      syncAds(request),
+      fetchOrders(request)
+    ]);
+
+    if (adsResult.success && adsResult.records) {
+      setAdsData(adsResult.records);
     }
-  }, [selectedShop, dateRange, syncing, syncAds, setAdsData]);
+  }, [selectedShop, dateRange, syncing, ordersSyncing, syncAds, fetchOrders, setAdsData]);
 
   // Auto-sync when shop is connected and date range changes
   useEffect(() => {
@@ -161,7 +169,7 @@ export default function DashboardPage() {
             <div className="flex gap-2 ml-auto">
               <SyncButton
                 onClick={handleSync}
-                loading={syncing}
+                loading={syncing || ordersSyncing}
                 disabled={!canSync}
               />
             </div>
@@ -250,6 +258,9 @@ export default function DashboardPage() {
           <AdsDataTable data={data} loading={dataLoading} />
         </CardContent>
       </Card>
+
+      {/* Orders Data Table */}
+      <OrdersDataTable orders={orders} loading={ordersSyncing} />
 
       {/* Long Range Warning Dialog */}
       <AlertDialog open={showLongRangeWarning} onOpenChange={setShowLongRangeWarning}>

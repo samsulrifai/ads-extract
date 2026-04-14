@@ -53,3 +53,21 @@ export interface KPIData {
   roas: number;
   cpc: number;
 }
+
+export interface Order {
+  order_sn: string;
+  create_time: string; // ISO string or timestamp
+  order_status: string;
+  total_amount: number;
+  shipping_carrier: string;
+  payment_method: string;
+  item_count: number;
+}
+
+export interface SyncOrdersResponse {
+  success: boolean;
+  records_synced: number;
+  records?: Order[];
+  message?: string;
+  error?: string;
+}
