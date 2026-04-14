@@ -58,7 +58,7 @@ export default function DashboardPage() {
   const [showLongRangeWarning, setShowLongRangeWarning] = useState(false);
 
   const { shops, selectedShop } = useShops();
-  const { data, chartData, kpi, loading: dataLoading, fetchAdsData } = useAdsData();
+  const { data, chartData, kpi, loading: dataLoading, setAdsData } = useAdsData();
   const { syncAds, syncing, result, error: syncError } = useSyncAds();
 
   const handleSync = useCallback(() => {
@@ -82,13 +82,9 @@ export default function DashboardPage() {
       end_date: format(dateRange.to, 'yyyy-MM-dd'),
     });
 
-    if (result.success) {
-      fetchAdsData(
-        selectedShop.shopee_shop_id,
-        format(dateRange.from, 'yyyy-MM-dd'),
-        format(dateRange.to, 'yyyy-MM-dd'),
-        adsTypeFilter
-      );
+    if (result.success && result.records) {
+      // Use records directly from Shopee API response
+      setAdsData(result.records);
     }
   };
 

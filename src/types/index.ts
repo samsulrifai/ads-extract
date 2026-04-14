@@ -33,6 +33,7 @@ export interface SyncRequest {
 export interface SyncResponse {
   success: boolean;
   records_synced: number;
+  records?: AdsPerformance[];
   message?: string;
   error?: string;
 }

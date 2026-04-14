@@ -3,6 +3,28 @@ import { supabase } from '@/lib/supabase';
 import { loadTokens } from '@/lib/shopee-client';
 import type { Shop } from '@/types';
 
+/**
+ * Build a synthetic Shop object from localStorage tokens.
+ * Used as fallback when Supabase is unavailable or empty.
+ */
+function getShopFromLocalStorage(): Shop | null {
+  const tokens = loadTokens();
+  if (!tokens) return null;
+
+  return {
+    id: `local-${tokens.shop_id}`,
+    shopee_shop_id: tokens.shop_id,
+    name: `Shop ${tokens.shop_id}`,
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token,
+    expired_at: new Date(
+      (tokens.saved_at + tokens.expire_in) * 1000
+    ).toISOString(),
+    created_at: new Date(tokens.saved_at * 1000).toISOString(),
+    updated_at: new Date(tokens.saved_at * 1000).toISOString(),
+  };
+}
+
 export function useShops() {
   const [shops, setShops] = useState<Shop[]>([]);
   const [loading, setLoading] = useState(true);
@@ -11,45 +33,34 @@ export function useShops() {
   const fetchShops = useCallback(async () => {
     setLoading(true);
     setError(null);
+
+    let shopList: Shop[] = [];
+
+    // Try Supabase first
     try {
       const { data, error: fetchError } = await supabase
         .from('shops')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (fetchError) throw fetchError;
-
-      let shopList: Shop[] = data || [];
-
-      // Fallback: if Supabase has no shops, check localStorage tokens
-      // This handles the case where OAuth callback saved tokens to localStorage
-      // but they haven't been persisted to Supabase yet
-      if (shopList.length === 0) {
-        const localTokens = loadTokens();
-        if (localTokens) {
-          shopList = [
-            {
-              id: `local-${localTokens.shop_id}`,
-              shopee_shop_id: localTokens.shop_id,
-              name: `Shop ${localTokens.shop_id}`,
-              access_token: localTokens.access_token,
-              refresh_token: localTokens.refresh_token,
-              expired_at: new Date(
-                (localTokens.saved_at + localTokens.expire_in) * 1000
-              ).toISOString(),
-              created_at: new Date(localTokens.saved_at * 1000).toISOString(),
-              updated_at: new Date(localTokens.saved_at * 1000).toISOString(),
-            },
-          ];
-        }
+      if (!fetchError && data && data.length > 0) {
+        shopList = data;
       }
-
-      setShops(shopList);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch shops');
-    } finally {
-      setLoading(false);
+    } catch {
+      // Supabase unreachable (e.g. localhost in production) — continue to fallback
+      console.warn('Supabase query failed, falling back to localStorage');
     }
+
+    // Fallback: if Supabase returned nothing, check localStorage tokens
+    if (shopList.length === 0) {
+      const localShop = getShopFromLocalStorage();
+      if (localShop) {
+        shopList = [localShop];
+      }
+    }
+
+    setShops(shopList);
+    setLoading(false);
   }, []);
 
   useEffect(() => {

@@ -1,35 +1,61 @@
 import { useState } from 'react';
-import { functionsUrl } from '@/lib/supabase';
-import type { SyncRequest, SyncResponse } from '@/types';
+import { loadTokens, refreshTokens, isTokenExpired } from '@/lib/shopee-client';
+import type { SyncResponse } from '@/types';
+
+export interface SyncAdsRequest {
+  shop_id: number;
+  start_date: string;
+  end_date: string;
+}
 
 export function useSyncAds() {
   const [syncing, setSyncing] = useState(false);
   const [result, setResult] = useState<SyncResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const syncAds = async (request: SyncRequest): Promise<SyncResponse> => {
+  const syncAds = async (request: SyncAdsRequest): Promise<SyncResponse> => {
     setSyncing(true);
     setError(null);
     setResult(null);
 
     try {
-      const response = await fetch(`${functionsUrl}/sync-ads-data`, {
+      // Get access token from localStorage, auto-refresh if expired
+      let tokens = loadTokens();
+      if (!tokens) {
+        throw new Error('Not connected. Please authorize your shop first.');
+      }
+
+      if (isTokenExpired(tokens)) {
+        tokens = await refreshTokens();
+      }
+
+      const response = await fetch('/api/sync-ads-data', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
         },
-        body: JSON.stringify(request),
+        body: JSON.stringify({
+          access_token: tokens.access_token,
+          shop_id: request.shop_id,
+          start_date: request.start_date,
+          end_date: request.end_date,
+        }),
       });
 
-      const data: SyncResponse = await response.json();
+      const data = await response.json();
 
       if (!response.ok || !data.success) {
         throw new Error(data.error || data.message || 'Sync failed');
       }
 
-      setResult(data);
-      return data;
+      const syncResult: SyncResponse = {
+        success: true,
+        records_synced: data.records_synced || 0,
+        records: data.records || [],
+      };
+
+      setResult(syncResult);
+      return syncResult;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Sync failed';
       setError(message);

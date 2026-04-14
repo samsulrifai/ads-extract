@@ -1,42 +1,15 @@
 import { useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
 import type { AdsPerformance, KPIData } from '@/types';
 
 export function useAdsData() {
   const [data, setData] = useState<AdsPerformance[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loading] = useState(false);
 
-  const fetchAdsData = useCallback(async (
-    shopId: number,
-    startDate: string,
-    endDate: string,
-    adsType?: string
-  ) => {
-    setLoading(true);
-    setError(null);
-    try {
-      let query = supabase
-        .from('ads_performance')
-        .select('*')
-        .eq('shop_id', shopId)
-        .gte('date', startDate)
-        .lte('date', endDate)
-        .order('date', { ascending: true });
-
-      if (adsType && adsType !== 'all') {
-        query = query.eq('ads_type', adsType);
-      }
-
-      const { data: result, error: fetchError } = await query;
-
-      if (fetchError) throw fetchError;
-      setData(result || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch ads data');
-    } finally {
-      setLoading(false);
-    }
+  /**
+   * Set ads data directly from sync result (no Supabase query needed).
+   */
+  const setAdsData = useCallback((records: AdsPerformance[]) => {
+    setData(records);
   }, []);
 
   const kpi: KPIData = data.reduce(
@@ -86,5 +59,5 @@ export function useAdsData() {
     return acc;
   }, [] as Array<{ date: string; impressions: number; clicks: number; spend: number; orders: number; gmv: number }>);
 
-  return { data, chartData, kpi, loading, error, fetchAdsData };
+  return { data, chartData, kpi, loading, setAdsData };
 }
