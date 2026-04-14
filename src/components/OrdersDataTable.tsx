@@ -1,10 +1,17 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { format } from 'date-fns';
-import { Download, Search } from 'lucide-react';
+import { Download, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import type { Order } from '@/types';
 import { exportToCSV } from '@/lib/export';
 
@@ -15,23 +22,31 @@ interface OrdersDataTableProps {
 
 export default function OrdersDataTable({ orders, loading }: OrdersDataTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [pageSize, setPageSize] = useState(20);
+  const [currentPage, setCurrentPage] = useState(0);
 
-  const filteredOrders = orders.filter((order) => {
-    if (!searchTerm) return true;
+  const filteredOrders = useMemo(() => {
+    if (!searchTerm) return orders;
     const term = searchTerm.toLowerCase();
-    return (
+    return orders.filter((order) =>
       order.order_sn.toLowerCase().includes(term) ||
       order.order_status.toLowerCase().includes(term) ||
       order.payment_method.toLowerCase().includes(term) ||
       order.product_name.toLowerCase().includes(term) ||
       order.sku.toLowerCase().includes(term)
     );
-  });
+  }, [orders, searchTerm]);
+
+  // Reset page when filter/pageSize changes
+  const totalPages = Math.ceil(filteredOrders.length / pageSize);
+  const safeCurrentPage = Math.min(currentPage, Math.max(0, totalPages - 1));
+  const paginatedOrders = filteredOrders.slice(
+    safeCurrentPage * pageSize,
+    safeCurrentPage * pageSize + pageSize
+  );
 
   const handleExport = () => {
     if (filteredOrders.length === 0) return;
-    
-    // Format data for CSV
     const dataForExport = filteredOrders.map((order) => ({
       'Order SN': order.order_sn,
       'Tanggal': format(new Date(order.create_time), 'dd MMM yyyy HH:mm'),
@@ -43,15 +58,15 @@ export default function OrdersDataTable({ orders, loading }: OrdersDataTableProp
       'Kurir': order.shipping_carrier,
       'Jumlah Item': order.item_count,
     }));
-
     exportToCSV(dataForExport, `orders-export-${format(new Date(), 'yyyyMMdd-HHmm')}.csv`);
   };
 
   const getStatusColor = (status: string) => {
     const s = status.toUpperCase();
     if (s === 'COMPLETED') return 'bg-green-500/10 text-green-500 hover:bg-green-500/20';
-    if (s === 'CANCELLED') return 'bg-red-500/10 text-red-500 hover:bg-red-500/20';
+    if (s === 'CANCELLED' || s === 'IN_CANCEL') return 'bg-red-500/10 text-red-500 hover:bg-red-500/20';
     if (s === 'READY_TO_SHIP' || s === 'SHIPPED') return 'bg-blue-500/10 text-blue-500 hover:bg-blue-500/20';
+    if (s === 'RETURN_REFUND' || s === 'RETURNED') return 'bg-orange-500/10 text-orange-500 hover:bg-orange-500/20';
     return 'bg-secondary text-secondary-foreground';
   };
 
@@ -59,9 +74,9 @@ export default function OrdersDataTable({ orders, loading }: OrdersDataTableProp
     <Card className="glass-panel">
       <CardHeader className="flex flex-row items-center justify-between pb-4">
         <CardTitle className="text-xl font-bold flex items-center gap-2">
-          Data Pesanan Khusus
+          Data Pesanan
           <Badge variant="secondary" className="ml-2">
-            {orders.length}
+            {filteredOrders.length}
           </Badge>
         </CardTitle>
         <div className="flex items-center gap-3">
@@ -71,12 +86,15 @@ export default function OrdersDataTable({ orders, loading }: OrdersDataTableProp
               placeholder="Cari SN, Produk, SKU, Status..."
               className="pl-9 w-[250px] bg-background/50 border-white/10"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(0);
+              }}
             />
           </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleExport}
             disabled={filteredOrders.length === 0 || loading}
             className="border-white/10 hover:bg-white/5"
@@ -116,8 +134,8 @@ export default function OrdersDataTable({ orders, loading }: OrdersDataTableProp
                       <td className="px-4 py-4"><div className="h-4 w-24 bg-white/10 rounded"></div></td>
                     </tr>
                   ))
-                ) : filteredOrders.length > 0 ? (
-                  filteredOrders.map((order) => (
+                ) : paginatedOrders.length > 0 ? (
+                  paginatedOrders.map((order) => (
                     <tr key={order.order_sn} className="hover:bg-white/5 group transition-colors">
                       <td className="px-4 py-3 font-medium">{order.order_sn}</td>
                       <td className="px-4 py-3 text-muted-foreground">
@@ -156,6 +174,57 @@ export default function OrdersDataTable({ orders, loading }: OrdersDataTableProp
             </table>
           </div>
         </div>
+
+        {/* Pagination */}
+        {!loading && filteredOrders.length > 0 && (
+          <div className="flex items-center justify-between mt-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span>Tampilkan</span>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(val) => {
+                  setPageSize(Number(val));
+                  setCurrentPage(0);
+                }}
+              >
+                <SelectTrigger className="w-[70px] h-8 bg-secondary/50 border-border text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-card border-border">
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+              <span>
+                dari {filteredOrders.length} pesanan
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">
+                Halaman {safeCurrentPage + 1} dari {totalPages || 1}
+              </span>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 border-white/10"
+                disabled={safeCurrentPage === 0}
+                onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 border-white/10"
+                disabled={safeCurrentPage >= totalPages - 1}
+                onClick={() => setCurrentPage((p) => p + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
