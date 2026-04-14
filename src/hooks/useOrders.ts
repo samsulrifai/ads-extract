@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { loadTokens, refreshTokens, isTokenExpired } from '@/lib/shopee-client';
+
 import { supabase } from '@/lib/supabase';
 import type { Order, SyncOrdersResponse } from '@/types';
 
@@ -7,7 +7,7 @@ export interface SyncOrdersRequest {
   shop_id: number;
   start_date: string;
   end_date: string;
-  access_token: string;
+  access_token?: string | null;
 }
 
 export function useOrders() {

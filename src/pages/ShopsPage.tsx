@@ -38,7 +38,7 @@ import type { Shop } from '@/types';
 
 export default function ShopsPage() {
   const [connectLoading, setConnectLoading] = useState(false);
-  const { shops, fetchShops, loading } = useShops();
+  const { shops, refetch: fetchShops, loading } = useShops();
 
   const handleConnectShop = async () => {
     setConnectLoading(true);

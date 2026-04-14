@@ -1,13 +1,13 @@
 import { useState, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import { loadTokens, refreshTokens, isTokenExpired } from '@/lib/shopee-client';
+
 import type { AdsPerformance, KPIData, SyncResponse } from '@/types';
 
 export interface SyncAdsRequest {
   shop_id: number;
   start_date: string;
   end_date: string;
-  access_token: string;
+  access_token?: string | null;
 }
 
 export function useAdsData() {
