@@ -3,6 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard,
   Store,
+  ShoppingBag,
   Menu,
   X,
   Rocket,
@@ -12,6 +13,7 @@ import { Separator } from '@/components/ui/separator';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/orders', icon: ShoppingBag, label: 'Orders' },
   { to: '/shops', icon: Store, label: 'Shops' },
 ];
 
