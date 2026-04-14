@@ -44,6 +44,9 @@ export function useSyncAds() {
 
       const data = await response.json();
 
+      // Log full response for debugging
+      console.log('[SyncAds] Full API response:', JSON.stringify(data, null, 2));
+
       if (!response.ok || !data.success) {
         throw new Error(data.error || data.message || 'Sync failed');
       }
