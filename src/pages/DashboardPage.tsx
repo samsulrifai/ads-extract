@@ -34,7 +34,6 @@ import PerformanceChart from '@/components/PerformanceChart';
 import KPICard from '@/components/KPICard';
 import { useShops } from '@/hooks/useShops';
 import { useAdsData } from '@/hooks/useAdsData';
-import { useSyncAds } from '@/hooks/useSyncAds';
 import type { DateRange } from '@/types';
 
 const formatCurrency = (value: number) => {
@@ -58,42 +57,32 @@ export default function DashboardPage() {
   const [showLongRangeWarning, setShowLongRangeWarning] = useState(false);
 
   const { shops, selectedShop } = useShops();
-  const { data, chartData, kpi, loading: dataLoading, setAdsData } = useAdsData();
-  const { syncAds, syncing, result, error: syncError } = useSyncAds();
+  const { data, chartData, kpi, loadingDb, syncing, fetchAdsFromDb, performSync, error } = useAdsData();
 
-  // Guard to prevent duplicate auto-sync calls
+  // Guard to prevent duplicate auto-load calls
   const lastSyncKey = useRef('');
 
-  const performSync = useCallback(async () => {
-    if (!selectedShop || !dateRange.from || !dateRange.to || syncing) return;
-
-    const result = await syncAds({
-      shop_id: selectedShop.shopee_shop_id,
-      start_date: format(dateRange.from, 'yyyy-MM-dd'),
-      end_date: format(dateRange.to, 'yyyy-MM-dd'),
-    });
-
-    if (result.success && result.records) {
-      setAdsData(result.records);
-    }
-  }, [selectedShop, dateRange, syncing, syncAds, setAdsData]);
-
-  // Auto-sync when shop is connected and date range changes
+  // Auto-load from DB when shop is connected and date range changes
   useEffect(() => {
     if (!selectedShop || !dateRange.from || !dateRange.to) return;
 
     const days = differenceInDays(dateRange.to, dateRange.from);
-    if (days > 30) return; // Skip auto-sync for long ranges
+    if (days > 30) return; // Skip auto-load for long ranges
 
-    // Create a unique key for this sync request to avoid duplicates
+    // Create a unique key for this load request to avoid duplicates
     const syncKey = `${selectedShop.shopee_shop_id}-${format(dateRange.from, 'yyyy-MM-dd')}-${format(dateRange.to, 'yyyy-MM-dd')}`;
     if (lastSyncKey.current === syncKey) return;
 
     lastSyncKey.current = syncKey;
-    performSync();
-  }, [selectedShop, dateRange, performSync]);
+    
+    fetchAdsFromDb({
+      shop_id: selectedShop.shopee_shop_id,
+      start_date: format(dateRange.from, 'yyyy-MM-dd'),
+      end_date: format(dateRange.to, 'yyyy-MM-dd'),
+    });
+  }, [selectedShop, dateRange, fetchAdsFromDb]);
 
-  const handleSync = useCallback(() => {
+  const handleSync = useCallback(async () => {
     if (!selectedShop || !dateRange.from || !dateRange.to) return;
 
     const days = differenceInDays(dateRange.to, dateRange.from);
@@ -104,7 +93,21 @@ export default function DashboardPage() {
 
     // Reset guard so manual sync always works
     lastSyncKey.current = '';
-    performSync();
+    await performSync({
+      shop_id: selectedShop.shopee_shop_id,
+      start_date: format(dateRange.from, 'yyyy-MM-dd'),
+      end_date: format(dateRange.to, 'yyyy-MM-dd')
+    });
+  }, [selectedShop, dateRange, performSync]);
+
+  const handleProceedLongRangeSync = useCallback(async () => {
+    if (!selectedShop || !dateRange.from || !dateRange.to) return;
+    setShowLongRangeWarning(false);
+    await performSync({
+      shop_id: selectedShop.shopee_shop_id,
+      start_date: format(dateRange.from, 'yyyy-MM-dd'),
+      end_date: format(dateRange.to, 'yyyy-MM-dd')
+    });
   }, [selectedShop, dateRange, performSync]);
 
   const canSync = selectedShop && dateRange.from && dateRange.to;
@@ -168,15 +171,9 @@ export default function DashboardPage() {
           </div>
 
           {/* Sync Status */}
-          {(result || syncError) && (
-            <div className={`mt-3 px-4 py-2.5 rounded-lg text-sm ${
-              result?.success
-                ? 'bg-success/10 text-success border border-success/20'
-                : 'bg-destructive/10 text-destructive border border-destructive/20'
-            }`}>
-              {result?.success
-                ? `✓ Successfully synced ${result.records_synced} records`
-                : `✗ ${syncError || 'Sync failed'}`}
+          {(error) && (
+            <div className="mt-3 px-4 py-2.5 rounded-lg text-sm bg-destructive/10 text-destructive border border-destructive/20">
+              ✗ {error}
             </div>
           )}
 
@@ -229,7 +226,7 @@ export default function DashboardPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <PerformanceChart data={chartData} loading={dataLoading} />
+          <PerformanceChart data={chartData} loading={loadingDb || syncing} />
         </CardContent>
       </Card>
 
@@ -247,7 +244,7 @@ export default function DashboardPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <AdsDataTable data={data} loading={dataLoading} />
+          <AdsDataTable data={data} loading={loadingDb || syncing} />
         </CardContent>
       </Card>
 
@@ -269,7 +266,7 @@ export default function DashboardPage() {
             <AlertDialogCancel className="border-border">Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-primary text-primary-foreground"
-              onClick={performSync}
+              onClick={handleProceedLongRangeSync}
             >
               Proceed Anyway
             </AlertDialogAction>

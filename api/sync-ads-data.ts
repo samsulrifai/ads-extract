@@ -90,6 +90,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Transform response
     const records = transformResponse(data.response, shopIdNum, start_date);
 
+    // Save to Supabase using Admin API to bypass RLS
+    if (records.length > 0) {
+      if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        console.warn('Supabase credentials missing in env. Data will not be cached to the database.');
+      } else {
+        const { createClient } = require('@supabase/supabase-js');
+        const supabaseAdmin = createClient(
+          process.env.VITE_SUPABASE_URL,
+          process.env.SUPABASE_SERVICE_ROLE_KEY
+        );
+
+        const { error: dbError } = await supabaseAdmin
+          .from('ads_performance')
+          .upsert(records, { onConflict: 'shop_id,date,ads_type' });
+
+        if (dbError) {
+          console.error('Failed to save ads performance to database:', dbError);
+        }
+      }
+    }
+
     res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(200).json({
       success: records.length > 0,

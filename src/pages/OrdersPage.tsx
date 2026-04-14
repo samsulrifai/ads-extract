@@ -23,21 +23,22 @@ export default function OrdersPage() {
   });
 
   const { shops, selectedShop } = useShops();
-  const { orders, fetchOrders, syncing, error } = useOrders();
 
   const lastSyncKey = useRef('');
+
+  const { orders, fetchOrders: loadFromDb, performSync: syncFromApi, syncing, loadingDb, error } = useOrders();
 
   const performSync = useCallback(async () => {
     if (!selectedShop || !dateRange.from || !dateRange.to || syncing) return;
 
-    await fetchOrders({
+    await loadFromDb({
       shop_id: selectedShop.shopee_shop_id,
       start_date: format(dateRange.from, 'yyyy-MM-dd'),
       end_date: format(dateRange.to, 'yyyy-MM-dd'),
     });
-  }, [selectedShop, dateRange, syncing, fetchOrders]);
+  }, [selectedShop, dateRange, syncing, loadFromDb]);
 
-  // Auto-sync when shop is connected and date range changes
+  // Auto-load from DB when shop is connected and date range changes
   useEffect(() => {
     if (!selectedShop || !dateRange.from || !dateRange.to) return;
 
@@ -48,13 +49,18 @@ export default function OrdersPage() {
     if (lastSyncKey.current === syncKey) return;
 
     lastSyncKey.current = syncKey;
-    performSync();
+    performSync(); // Which now calls loadFromDb
   }, [selectedShop, dateRange, performSync]);
 
-  const handleManualSync = useCallback(() => {
-    lastSyncKey.current = '';
-    performSync();
-  }, [performSync]);
+  const handleManualSync = useCallback(async () => {
+    if (!selectedShop || !dateRange.from || !dateRange.to || syncing) return;
+    
+    await syncFromApi({
+      shop_id: selectedShop.shopee_shop_id,
+      start_date: format(dateRange.from, 'yyyy-MM-dd'),
+      end_date: format(dateRange.to, 'yyyy-MM-dd'),
+    });
+  }, [selectedShop, dateRange, syncing, syncFromApi]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -126,7 +132,7 @@ export default function OrdersPage() {
       <OrdersCharts orders={orders} />
 
       {/* Orders Table */}
-      <OrdersDataTable orders={orders} loading={syncing} />
+      <OrdersDataTable orders={orders} loading={syncing || loadingDb} />
     </div>
   );
 }

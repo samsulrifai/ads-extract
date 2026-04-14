@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { loadTokens, refreshTokens, isTokenExpired } from '@/lib/shopee-client';
+import { supabase } from '@/lib/supabase';
 import type { Order, SyncOrdersResponse } from '@/types';
 
 export interface SyncOrdersRequest {
@@ -10,10 +11,42 @@ export interface SyncOrdersRequest {
 
 export function useOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [loadingDb, setLoadingDb] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchOrders = useCallback(async (request: SyncOrdersRequest): Promise<SyncOrdersResponse> => {
+  // Fetch orders directly from Supabase Database (very fast, no Shopee API hit)
+  const fetchOrders = useCallback(async (request: SyncOrdersRequest) => {
+    setLoadingDb(true);
+    setError(null);
+    try {
+      // Shopee times are end of day vs start of day, but we can do a simple range
+      // create_time is timestamp. To ensure we get the full range, append times:
+      const startDateTime = `${request.start_date}T00:00:00Z`;
+      const endDateTime = `${request.end_date}T23:59:59Z`;
+
+      const { data, error: dbError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('shop_id', request.shop_id)
+        .gte('create_time', startDateTime)
+        .lte('create_time', endDateTime)
+        .order('create_time', { ascending: false });
+
+      if (dbError) throw dbError;
+
+      setOrders(data as Order[]);
+      return data;
+    } catch (err: any) {
+      setError(err.message || 'Failed to load from database');
+      return [];
+    } finally {
+      setLoadingDb(false);
+    }
+  }, []);
+
+  // Force sync from Shopee API, and refresh DB
+  const performSync = useCallback(async (request: SyncOrdersRequest): Promise<SyncOrdersResponse> => {
     setSyncing(true);
     setError(null);
 
@@ -46,14 +79,14 @@ export function useOrders() {
         throw new Error(data.error || data.message || 'Failed to sync orders');
       }
 
-      const syncResult: SyncOrdersResponse = {
+      // After a successful sync API call, re-fetch from database to get fresh records
+      await fetchOrders(request);
+
+      return {
         success: true,
         records_synced: data.records_synced || 0,
         records: data.records || [],
       };
-
-      setOrders(syncResult.records || []);
-      return syncResult;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Sync failed';
       setError(message);
@@ -61,7 +94,7 @@ export function useOrders() {
     } finally {
       setSyncing(false);
     }
-  }, []);
+  }, [fetchOrders]);
 
-  return { orders, setOrders, fetchOrders, syncing, error };
+  return { orders, setOrders, fetchOrders, performSync, syncing, loadingDb, error };
 }

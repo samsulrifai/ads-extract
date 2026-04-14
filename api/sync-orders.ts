@@ -62,6 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
           return {
             order_sn: order.order_sn,
+            shop_id: shopIdNum,
             create_time: new Date(order.create_time * 1000).toISOString(),
             order_status: order.order_status,
             total_amount: order.total_amount,
@@ -73,6 +74,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           };
         });
         records.push(...transformed);
+      }
+    }
+
+    // Save to Supabase using Admin API to bypass RLS
+    if (records.length > 0) {
+      if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        console.warn('Supabase credentials missing in env. Data will not be cached to the database.');
+      } else {
+        const { createClient } = require('@supabase/supabase-js');
+        const supabaseAdmin = createClient(
+          process.env.VITE_SUPABASE_URL,
+          process.env.SUPABASE_SERVICE_ROLE_KEY
+        );
+
+        const { error: dbError } = await supabaseAdmin
+          .from('orders')
+          .upsert(records, { onConflict: 'order_sn' });
+
+        if (dbError) {
+          console.error('Failed to save orders to database:', dbError);
+        }
       }
     }
 
