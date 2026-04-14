@@ -81,6 +81,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (records.length > 0) {
       if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
         console.warn('Supabase credentials missing in env. Data will not be cached to the database.');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        return res.status(500).json({ success: false, error: 'Database caching skipped: Missing SUPABASE_SERVICE_ROLE_KEY in Vercel.' });
       } else {
         const { createClient } = require('@supabase/supabase-js');
         const supabaseAdmin = createClient(
@@ -94,6 +96,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         if (dbError) {
           console.error('Failed to save orders to database:', dbError);
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          return res.status(500).json({ success: false, error: `Database Save Error: ${dbError.message || JSON.stringify(dbError)}` });
         }
       }
     }
