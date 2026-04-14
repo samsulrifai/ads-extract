@@ -35,6 +35,7 @@ export default function OrdersPage() {
       shop_id: selectedShop.shopee_shop_id,
       start_date: format(dateRange.from, 'yyyy-MM-dd'),
       end_date: format(dateRange.to, 'yyyy-MM-dd'),
+      access_token: selectedShop.access_token,
     });
   }, [selectedShop, dateRange, syncing, loadFromDb]);
 
@@ -59,6 +60,7 @@ export default function OrdersPage() {
       shop_id: selectedShop.shopee_shop_id,
       start_date: format(dateRange.from, 'yyyy-MM-dd'),
       end_date: format(dateRange.to, 'yyyy-MM-dd'),
+      access_token: selectedShop.access_token,
     });
   }, [selectedShop, dateRange, syncing, syncFromApi]);
 

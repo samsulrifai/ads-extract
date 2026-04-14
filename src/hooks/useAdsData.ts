@@ -7,6 +7,7 @@ export interface SyncAdsRequest {
   shop_id: number;
   start_date: string;
   end_date: string;
+  access_token: string;
 }
 
 export function useAdsData() {
@@ -46,20 +47,15 @@ export function useAdsData() {
     setError(null);
 
     try {
-      let tokens = loadTokens();
-      if (!tokens) {
-        throw new Error('Not connected. Please authorize your shop first.');
-      }
-
-      if (isTokenExpired(tokens)) {
-        tokens = await refreshTokens();
+      if (!request.access_token) {
+        throw new Error('Not connected or missing access token.');
       }
 
       const response = await fetch('/api/sync-ads-data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          access_token: tokens.access_token,
+          access_token: request.access_token,
           shop_id: request.shop_id,
           start_date: request.start_date,
           end_date: request.end_date,
