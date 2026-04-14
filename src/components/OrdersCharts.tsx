@@ -14,16 +14,26 @@ interface OrdersChartsProps {
   orders: Order[];
 }
 
+// Distinct, high-contrast colors
 const COLORS = [
-  'oklch(0.70 0.20 270)',  // purple
-  'oklch(0.75 0.18 165)',  // teal
-  'oklch(0.70 0.20 50)',   // orange
-  'oklch(0.65 0.22 330)',  // pink
-  'oklch(0.70 0.15 200)',  // blue
-  'oklch(0.65 0.20 120)',  // green
-  'oklch(0.60 0.18 30)',   // warm brown
-  'oklch(0.72 0.16 250)',  // indigo
+  '#6366f1', // indigo
+  '#22d3ee', // cyan
+  '#f97316', // orange
+  '#ec4899', // pink
+  '#10b981', // emerald
+  '#a1a1aa', // gray for "Lainnya"
 ];
+
+/** Take top 5 entries, group rest as "Lainnya" */
+function topFiveWithOther(data: { name: string; value: number }[]) {
+  if (data.length <= 5) return data;
+  const top5 = data.slice(0, 5);
+  const otherValue = data.slice(5).reduce((sum, d) => sum + d.value, 0);
+  if (otherValue > 0) {
+    top5.push({ name: 'Lainnya', value: otherValue });
+  }
+  return top5;
+}
 
 const CustomTooltip = ({ active, payload }: any) => {
   if (!active || !payload?.length) return null;
@@ -35,37 +45,44 @@ const CustomTooltip = ({ active, payload }: any) => {
   );
 };
 
-const renderCustomLabel = ({ percent }: any) => {
+const RADIAN = Math.PI / 180;
+const renderCustomLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent }: any) => {
   if (percent < 0.05) return null;
-  return `${(percent * 100).toFixed(0)}%`;
+  const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+  return (
+    <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={11} fontWeight={600}>
+      {`${(percent * 100).toFixed(0)}%`}
+    </text>
+  );
 };
 
 export default function OrdersCharts({ orders }: OrdersChartsProps) {
-  // 1. Payment method distribution
   const paymentData = useMemo(() => {
     const counts: Record<string, number> = {};
     orders.forEach((o) => {
       const key = o.payment_method || 'Unknown';
       counts[key] = (counts[key] || 0) + 1;
     });
-    return Object.entries(counts)
+    const sorted = Object.entries(counts)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
+    return topFiveWithOther(sorted);
   }, [orders]);
 
-  // 2. Return/Cancel status distribution
   const statusData = useMemo(() => {
     const counts: Record<string, number> = {};
     orders.forEach((o) => {
       const status = o.order_status?.toUpperCase() || 'UNKNOWN';
       counts[status] = (counts[status] || 0) + 1;
     });
-    return Object.entries(counts)
+    const sorted = Object.entries(counts)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
+    return topFiveWithOther(sorted);
   }, [orders]);
 
-  // 3. Return/Cancel by carrier
   const carrierReturnData = useMemo(() => {
     const counts: Record<string, number> = {};
     orders
@@ -77,141 +94,86 @@ export default function OrdersCharts({ orders }: OrdersChartsProps) {
         const key = o.shipping_carrier || 'Unknown';
         counts[key] = (counts[key] || 0) + 1;
       });
-    return Object.entries(counts)
+    const sorted = Object.entries(counts)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
+    return topFiveWithOther(sorted);
   }, [orders]);
 
   if (orders.length === 0) return null;
 
+  const renderPie = (data: { name: string; value: number }[], emptyMsg: string) => {
+    if (data.length === 0) {
+      return (
+        <div className="h-[280px] flex items-center justify-center text-sm text-muted-foreground">
+          {emptyMsg}
+        </div>
+      );
+    }
+    return (
+      <ResponsiveContainer width="100%" height={280}>
+        <PieChart>
+          <Pie
+            data={data}
+            cx="50%"
+            cy="45%"
+            innerRadius={40}
+            outerRadius={70}
+            paddingAngle={3}
+            dataKey="value"
+            label={renderCustomLabel}
+            labelLine={false}
+          >
+            {data.map((_, i) => (
+              <Cell key={i} fill={COLORS[i % COLORS.length]} />
+            ))}
+          </Pie>
+          <Tooltip content={<CustomTooltip />} />
+          <Legend
+            wrapperStyle={{ fontSize: 11, paddingTop: 12 }}
+            iconType="circle"
+            iconSize={8}
+            layout="horizontal"
+            align="center"
+            verticalAlign="bottom"
+          />
+        </PieChart>
+      </ResponsiveContainer>
+    );
+  };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      {/* Payment Method */}
       <Card className="glass-card">
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-1">
           <CardTitle className="text-sm font-semibold text-muted-foreground">
             Jenis Pembayaran
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          {paymentData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={paymentData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={45}
-                  outerRadius={75}
-                  paddingAngle={3}
-                  dataKey="value"
-                  label={renderCustomLabel}
-                  labelLine={false}
-                  style={{ fontSize: 11, fill: 'white' }}
-                >
-                  {paymentData.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-                <Legend
-                  wrapperStyle={{ fontSize: 11 }}
-                  iconType="circle"
-                  iconSize={8}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-[220px] flex items-center justify-center text-sm text-muted-foreground">
-              Tidak ada data
-            </div>
-          )}
+        <CardContent className="pt-0">
+          {renderPie(paymentData, 'Tidak ada data')}
         </CardContent>
       </Card>
 
-      {/* Order Status */}
       <Card className="glass-card">
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-1">
           <CardTitle className="text-sm font-semibold text-muted-foreground">
             Status Pesanan
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          {statusData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={statusData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={45}
-                  outerRadius={75}
-                  paddingAngle={3}
-                  dataKey="value"
-                  label={renderCustomLabel}
-                  labelLine={false}
-                  style={{ fontSize: 11, fill: 'white' }}
-                >
-                  {statusData.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-                <Legend
-                  wrapperStyle={{ fontSize: 11 }}
-                  iconType="circle"
-                  iconSize={8}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-[220px] flex items-center justify-center text-sm text-muted-foreground">
-              Tidak ada data
-            </div>
-          )}
+        <CardContent className="pt-0">
+          {renderPie(statusData, 'Tidak ada data')}
         </CardContent>
       </Card>
 
-      {/* Return/Cancel by Carrier */}
       <Card className="glass-card">
-        <CardHeader className="pb-2">
+        <CardHeader className="pb-1">
           <CardTitle className="text-sm font-semibold text-muted-foreground">
             Return/Cancel per Kurir
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          {carrierReturnData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={carrierReturnData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={45}
-                  outerRadius={75}
-                  paddingAngle={3}
-                  dataKey="value"
-                  label={renderCustomLabel}
-                  labelLine={false}
-                  style={{ fontSize: 11, fill: 'white' }}
-                >
-                  {carrierReturnData.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip />} />
-                <Legend
-                  wrapperStyle={{ fontSize: 11 }}
-                  iconType="circle"
-                  iconSize={8}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-[220px] flex items-center justify-center text-sm text-muted-foreground">
-              Belum ada return/cancel
-            </div>
-          )}
+        <CardContent className="pt-0">
+          {renderPie(carrierReturnData, 'Belum ada return/cancel')}
         </CardContent>
       </Card>
     </div>
