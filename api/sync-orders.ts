@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { PARTNER_ID, API_HOST, generateSign } from './_lib/shopee.js';
+import { getShopToken } from './_lib/get-shop-token.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
@@ -17,19 +18,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { access_token, shop_id, start_date, end_date } = req.body;
+    const { shop_id, start_date, end_date } = req.body;
 
-    if (!access_token || !shop_id || !start_date || !end_date) {
+    if (!shop_id || !start_date || !end_date) {
       res.setHeader('Access-Control-Allow-Origin', '*');
       return res.status(400).json({
         success: false,
-        error: 'Missing access_token, shop_id, start_date, or end_date',
+        error: 'Missing shop_id, start_date, or end_date',
+      });
+    }
+
+    const shopIdNum = Number(shop_id);
+
+    // Get valid token from Supabase (auto-refreshes if expired)
+    const { access_token, error: tokenError } = await getShopToken(shopIdNum);
+    if (tokenError || !access_token) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      return res.status(200).json({
+        success: false,
+        records_synced: 0,
+        error: tokenError || 'No valid token found for this shop.',
       });
     }
 
     const startTime = Math.floor(new Date(start_date + 'T00:00:00').getTime() / 1000);
     const endTime = Math.floor(new Date(end_date + 'T23:59:59').getTime() / 1000);
-    const shopIdNum = Number(shop_id);
 
     // 1. Get Order SN List
     const { orderSns, error: listError } = await fetchOrderList(access_token, shopIdNum, startTime, endTime);
@@ -50,7 +63,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { data, error: detailError } = await fetchOrderDetails(access_token, shopIdNum, chunk);
       
       if (detailError) {
-        // Log but continue if possible, or fail entirely
         console.warn(`Detail Error: ${detailError}`);
         continue;
       }
@@ -80,25 +92,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Save to Supabase using Admin API to bypass RLS
     if (records.length > 0) {
-      if (!process.env.VITE_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-        console.warn('Supabase credentials missing in env. Data will not be cached to the database.');
+      const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        console.warn('Supabase credentials missing in env.');
         res.setHeader('Access-Control-Allow-Origin', '*');
-        return res.status(500).json({ success: false, error: 'Database caching skipped: Missing SUPABASE_SERVICE_ROLE_KEY in Vercel.' });
-      } else {
-        const supabaseAdmin = createClient(
-          process.env.VITE_SUPABASE_URL,
-          process.env.SUPABASE_SERVICE_ROLE_KEY
-        );
+        return res.status(500).json({ success: false, error: 'Missing SUPABASE_SERVICE_ROLE_KEY.' });
+      }
 
-        const { error: dbError } = await supabaseAdmin
-          .from('orders')
-          .upsert(records, { onConflict: 'order_sn' });
+      const supabaseAdmin = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-        if (dbError) {
-          console.error('Failed to save orders to database:', dbError);
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          return res.status(500).json({ success: false, error: `Database Save Error: ${dbError.message || JSON.stringify(dbError)}` });
-        }
+      const { error: dbError } = await supabaseAdmin
+        .from('orders')
+        .upsert(records, { onConflict: 'order_sn' });
+
+      if (dbError) {
+        console.error('Failed to save orders to database:', dbError);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        return res.status(500).json({ success: false, error: `Database Save Error: ${dbError.message || JSON.stringify(dbError)}` });
       }
     }
 
@@ -121,7 +131,7 @@ async function fetchOrderList(accessToken: string, shopId: number, startTime: nu
     let more = true;
     const orderSns: string[] = [];
 
-    while (more && orderSns.length < 500) { // Safety limit: max 500 orders per sync
+    while (more && orderSns.length < 500) {
       const timestamp = Math.floor(Date.now() / 1000);
       const sign = generateSign(apiPath, timestamp, accessToken, shopId);
 
@@ -168,9 +178,6 @@ async function fetchOrderDetails(accessToken: string, shopId: number, orderSns: 
     const sign = generateSign(apiPath, timestamp, accessToken, shopId);
 
     const snListStr = orderSns.join(',');
-    
-    // According to Shopee doc, response_optional_fields controls what fields you get.
-    // By default some are excluded. We ask for all we need.
     const optionalFields = 'total_amount,payment_method,shipping_carrier,item_list';
 
     const queryParams = new URLSearchParams({

@@ -7,7 +7,6 @@ export interface SyncOrdersRequest {
   shop_id: number;
   start_date: string;
   end_date: string;
-  access_token?: string | null;
 }
 
 export function useOrders() {
@@ -52,20 +51,12 @@ export function useOrders() {
     setError(null);
 
     try {
-      if (!request.access_token) {
-        throw new Error('Not connected or missing access token.');
-      }
-
-      // We could ideally check expiration here, but refresh logic might require the refresh_token too.
-      // For now, let's keep it simple and assume the backend or a separate process refreshes it, 
-      // or we pass the token directly to the backend.
       const response = await fetch('/api/sync-orders', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          access_token: request.access_token,
           shop_id: request.shop_id,
           start_date: request.start_date,
           end_date: request.end_date,
