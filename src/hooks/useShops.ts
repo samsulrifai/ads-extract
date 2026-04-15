@@ -44,7 +44,19 @@ export function useShops() {
         .order('created_at', { ascending: false });
 
       if (!fetchError && data && data.length > 0) {
-        shopList = data;
+        // Merge fresh tokens from localStorage into Supabase shop data
+        // (token refresh only updates localStorage, not Supabase)
+        const localTokens = loadTokens();
+        shopList = data.map((shop: Shop) => {
+          if (localTokens && shop.shopee_shop_id === localTokens.shop_id) {
+            return {
+              ...shop,
+              access_token: localTokens.access_token,
+              refresh_token: localTokens.refresh_token,
+            };
+          }
+          return shop;
+        });
       }
     } catch {
       // Supabase unreachable (e.g. localhost in production) — continue to fallback
