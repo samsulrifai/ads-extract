@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { createClient } from '@supabase/supabase-js';
 import { PARTNER_ID, API_HOST, generateSign } from './_lib/shopee.js';
 
 /**
@@ -54,6 +55,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (data.error) {
       res.setHeader('Access-Control-Allow-Origin', '*');
       return res.status(400).json({ success: false, error: data.error, message: data.message });
+    }
+
+    // Also update tokens in Supabase so other devices can access them
+    try {
+      const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+      if (supabaseUrl && supabaseServiceKey) {
+        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        const expiredAt = new Date((timestamp + data.expire_in) * 1000).toISOString();
+
+        await supabase.from('shops').update({
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+          expired_at: expiredAt,
+          updated_at: new Date().toISOString(),
+        }).eq('shopee_shop_id', Number(shop_id));
+      }
+    } catch (dbErr) {
+      console.error('Failed to update tokens in Supabase:', dbErr);
     }
 
     res.setHeader('Access-Control-Allow-Origin', '*');

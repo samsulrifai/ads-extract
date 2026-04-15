@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import { loadTokens } from '@/lib/shopee-client';
+import { loadTokens, saveTokens } from '@/lib/shopee-client';
 import type { Shop } from '@/types';
 
 /**
@@ -25,6 +25,59 @@ function getShopFromLocalStorage(): Shop | null {
   };
 }
 
+/**
+ * Check if a shop's token is expired based on expired_at field.
+ */
+function isShopTokenExpired(shop: Shop): boolean {
+  if (!shop.expired_at) return true;
+  const now = new Date();
+  const expiry = new Date(shop.expired_at);
+  // 5 minute buffer
+  return now.getTime() > expiry.getTime() - 5 * 60 * 1000;
+}
+
+/**
+ * Try to refresh tokens for a shop via the API, update both Supabase and localStorage.
+ */
+async function tryRefreshShopToken(shop: Shop): Promise<Shop> {
+  if (!shop.refresh_token) return shop;
+
+  try {
+    const res = await fetch('/api/refresh-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        refresh_token: shop.refresh_token,
+        shop_id: shop.shopee_shop_id,
+      }),
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      // Save to localStorage so this device also has fresh tokens
+      saveTokens({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+        expire_in: data.expire_in,
+        shop_id: data.shop_id,
+      });
+
+      return {
+        ...shop,
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+        expired_at: new Date(
+          (Math.floor(Date.now() / 1000) + data.expire_in) * 1000
+        ).toISOString(),
+      };
+    }
+  } catch (err) {
+    console.warn('Token refresh failed:', err);
+  }
+
+  return shop;
+}
+
 export function useShops() {
   const [shops, setShops] = useState<Shop[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,10 +97,10 @@ export function useShops() {
         .order('created_at', { ascending: false });
 
       if (!fetchError && data && data.length > 0) {
-        // Merge fresh tokens from localStorage into Supabase shop data
-        // (token refresh only updates localStorage, not Supabase)
         const localTokens = loadTokens();
+
         shopList = data.map((shop: Shop) => {
+          // If localStorage has fresher tokens for this shop, use those
           if (localTokens && shop.shopee_shop_id === localTokens.shop_id) {
             return {
               ...shop,
@@ -55,11 +108,11 @@ export function useShops() {
               refresh_token: localTokens.refresh_token,
             };
           }
+          // Otherwise use whatever Supabase has (works on other devices)
           return shop;
         });
       }
     } catch {
-      // Supabase unreachable (e.g. localhost in production) — continue to fallback
       console.warn('Supabase query failed, falling back to localStorage');
     }
 
@@ -71,7 +124,18 @@ export function useShops() {
       }
     }
 
-    setShops(shopList);
+    // Auto-refresh expired tokens (handles new device scenario)
+    const refreshedList: Shop[] = [];
+    for (const shop of shopList) {
+      if (shop.access_token && isShopTokenExpired(shop)) {
+        const refreshed = await tryRefreshShopToken(shop);
+        refreshedList.push(refreshed);
+      } else {
+        refreshedList.push(shop);
+      }
+    }
+
+    setShops(refreshedList);
     setLoading(false);
   }, []);
 
