@@ -124,10 +124,12 @@ export function useShops() {
       }
     }
 
-    // Auto-refresh expired tokens (handles new device scenario)
+    // Auto-refresh expired or missing tokens (handles new device scenario)
     const refreshedList: Shop[] = [];
     for (const shop of shopList) {
-      if (shop.access_token && isShopTokenExpired(shop)) {
+      const needsRefresh = !shop.access_token || isShopTokenExpired(shop);
+      if (needsRefresh && shop.refresh_token) {
+        console.log('[useShops] Token missing or expired, attempting refresh for shop', shop.shopee_shop_id);
         const refreshed = await tryRefreshShopToken(shop);
         refreshedList.push(refreshed);
       } else {
