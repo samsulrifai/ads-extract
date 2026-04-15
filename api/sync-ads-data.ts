@@ -45,15 +45,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       sign,
       access_token,
       shop_id: String(shopIdNum),
+      start_date: start_date,
+      end_date: end_date,
+      start_time: String(startTime),
+      end_time: String(endTime)
     });
 
     const url = `${API_HOST}${apiPath}?${queryParams.toString()}`;
-    const requestBody = { start_time: startTime, end_time: endTime };
 
     const response = await fetch(url, {
-      method: 'POST',
+      method: 'GET',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
     });
 
     const data = await response.json();
