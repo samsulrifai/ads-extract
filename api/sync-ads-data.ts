@@ -35,6 +35,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const endTime = Math.floor(new Date(end_date + 'T23:59:59').getTime() / 1000);
     const shopIdNum = Number(shop_id);
 
+    // Convert YYYY-MM-DD → DD-MM-YYYY (Shopee requires DD-MM-YYYY)
+    const [sy, sm, sd] = start_date.split('-');
+    const [ey, em, ed] = end_date.split('-');
+    const startDateFormatted = `${sd}-${sm}-${sy}`;
+    const endDateFormatted = `${ed}-${em}-${ey}`;
+
     const apiPath = '/api/v2/ads/get_all_cpc_ads_daily_performance';
     const timestamp = Math.floor(Date.now() / 1000);
     const sign = generateSign(apiPath, timestamp, access_token, shopIdNum);
@@ -45,8 +51,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       sign,
       access_token,
       shop_id: String(shopIdNum),
-      start_date: start_date,
-      end_date: end_date,
+      start_date: startDateFormatted,
+      end_date: endDateFormatted,
       start_time: String(startTime),
       end_time: String(endTime)
     });
