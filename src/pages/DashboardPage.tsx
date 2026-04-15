@@ -8,6 +8,9 @@ import {
   BarChart3,
   Target,
   Zap,
+  MousePointerClick,
+  Percent,
+  Package,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -186,34 +189,59 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* KPI Cards */}
+      {/* KPI Cards - Row 1 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
         <KPICard
-          title="Total Spend"
-          value={formatCurrency(kpi.totalSpend)}
-          icon={<DollarSign className="h-5 w-5" />}
+          title="Iklan Dilihat"
+          value={formatNumber(kpi.totalImpressions)}
+          icon={<Eye className="h-5 w-5" />}
           delay={0}
         />
         <KPICard
-          title="Total GMV"
-          value={formatCurrency(kpi.totalGMV)}
-          subtitle={`ROAS: ${kpi.roas.toFixed(2)}x`}
-          icon={<TrendingUp className="h-5 w-5" />}
+          title="Produk Terjual"
+          value={formatNumber(kpi.totalOrders)}
+          icon={<Package className="h-5 w-5" />}
           delay={50}
         />
         <KPICard
-          title="Impressions"
-          value={formatNumber(kpi.totalImpressions)}
-          subtitle={`CTR: ${kpi.ctr.toFixed(2)}%`}
-          icon={<Eye className="h-5 w-5" />}
+          title="Jumlah Klik"
+          value={formatNumber(kpi.totalClicks)}
+          icon={<MousePointerClick className="h-5 w-5" />}
           delay={100}
         />
         <KPICard
-          title="Orders"
-          value={formatNumber(kpi.totalOrders)}
-          subtitle={`CPC: ${formatCurrency(kpi.cpc)}`}
-          icon={<ShoppingCart className="h-5 w-5" />}
+          title="Penjualan dari Iklan"
+          value={formatCurrency(kpi.totalGMV)}
+          icon={<TrendingUp className="h-5 w-5" />}
           delay={150}
+        />
+      </div>
+
+      {/* KPI Cards - Row 2 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+        <KPICard
+          title="Persentase Klik"
+          value={`${kpi.ctr.toFixed(2)}%`}
+          icon={<Percent className="h-5 w-5" />}
+          delay={200}
+        />
+        <KPICard
+          title="Biaya Iklan"
+          value={formatCurrency(kpi.totalSpend)}
+          icon={<DollarSign className="h-5 w-5" />}
+          delay={250}
+        />
+        <KPICard
+          title="Pesanan"
+          value={formatNumber(kpi.totalOrders)}
+          icon={<ShoppingCart className="h-5 w-5" />}
+          delay={300}
+        />
+        <KPICard
+          title="ROAS"
+          value={kpi.roas.toFixed(2)}
+          icon={<Target className="h-5 w-5" />}
+          delay={350}
         />
       </div>
 
