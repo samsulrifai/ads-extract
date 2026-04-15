@@ -193,9 +193,8 @@ function timestampToDate(ts: number | undefined): string {
   return new Date(ts * 1000).toISOString().split('T')[0];
 }
 
-/** Shopee API returns monetary values in micro-currency (1 IDR = 100,000 micro). */
+/** Shopee API returns monetary values already in IDR — no conversion needed. */
 function normalizeAmount(value: number): number {
-  if (!value) return 0;
-  return value / 100000;
+  return value || 0;
 }
 
