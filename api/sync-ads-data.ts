@@ -159,9 +159,11 @@ function transformResponse(response: any, shopId: number, fallbackDate: string):
     for (const day of dailyData) {
       if (!day || typeof day !== 'object') continue;
 
+      const rawDate = day.date || timestampToDate(day.timestamp || day.start_time) || fallbackDate;
+
       records.push({
         shop_id: shopId,
-        date: day.date || timestampToDate(day.timestamp || day.start_time) || fallbackDate,
+        date: normalizeDate(rawDate),
         ads_type: day.campaign_type || day.type || 'cpc',
         impressions: day.impression || day.impressions || 0,
         clicks: day.clicks || day.click || 0,
@@ -175,6 +177,17 @@ function transformResponse(response: any, shopId: number, fallbackDate: string):
   return records;
 }
 
+/** Convert DD-MM-YYYY → YYYY-MM-DD for PostgreSQL. Pass through if already YYYY-MM-DD. */
+function normalizeDate(dateStr: string): string {
+  if (!dateStr) return dateStr;
+  // Detect DD-MM-YYYY (day > 12 or starts with 0x where x <= 31)
+  const ddmmyyyy = dateStr.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (ddmmyyyy) {
+    return `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`;
+  }
+  return dateStr;
+}
+
 function timestampToDate(ts: number | undefined): string {
   if (!ts) return '';
   return new Date(ts * 1000).toISOString().split('T')[0];
@@ -185,3 +198,4 @@ function normalizeAmount(value: number): number {
   if (value > 10_000) return value / 100;
   return value;
 }
+
