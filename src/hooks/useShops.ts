@@ -102,6 +102,29 @@ export function useShops() {
 
     setShops(shopList);
     setLoading(false);
+
+    // Auto-update shop names that are still default "Shop XXXX"
+    for (const shop of shopList) {
+      if (shop.name && /^Shop \d+$/.test(shop.name)) {
+        try {
+          const res = await fetch('/api/update-shop-name', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ shop_id: shop.shopee_shop_id }),
+          });
+          const data = await res.json();
+          if (data.success && data.shop_name) {
+            setShops(prev => prev.map(s =>
+              s.shopee_shop_id === shop.shopee_shop_id
+                ? { ...s, name: data.shop_name }
+                : s
+            ));
+          }
+        } catch {
+          // silently ignore
+        }
+      }
+    }
   }, []);
 
   useEffect(() => {
