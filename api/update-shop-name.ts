@@ -36,14 +36,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { access_token, error: tokenError } = await getShopToken(shopIdNum);
     if (tokenError || !access_token) {
       res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.status(200).json({ success: false, error: tokenError || 'No valid token' });
+      return res.status(200).json({
+        success: false,
+        error: tokenError || 'No valid token',
+        step: 'getShopToken',
+      });
     }
 
     // Fetch real shop name from Shopee
     const shopName = await getShopInfo(shopIdNum, access_token);
     if (!shopName) {
       res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.status(200).json({ success: false, error: 'Could not fetch shop name from Shopee' });
+      return res.status(200).json({
+        success: false,
+        error: 'Could not fetch shop name from Shopee API. Check Vercel logs for details.',
+        step: 'getShopInfo',
+        shop_id: shopIdNum,
+      });
     }
 
     // Update in Supabase
@@ -56,7 +65,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    await supabase.from('shops').update({ name: shopName }).eq('shopee_shop_id', shopIdNum);
+    const { error: dbError } = await supabase
+      .from('shops')
+      .update({ name: shopName })
+      .eq('shopee_shop_id', shopIdNum);
+
+    if (dbError) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      return res.status(200).json({ success: false, error: dbError.message, step: 'supabase_update' });
+    }
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(200).json({ success: true, shop_name: shopName });
