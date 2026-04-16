@@ -59,7 +59,7 @@ export default function DashboardPage() {
   const [adsTypeFilter, setAdsTypeFilter] = useState('all');
   const [showLongRangeWarning, setShowLongRangeWarning] = useState(false);
 
-  const { shops, selectedShop } = useShops();
+  const { shops, selectedShop, selectShop } = useShops();
   const { data, chartData, kpi, loadingDb, syncing, fetchAdsFromDb, performSync, error } = useAdsData();
 
   // Guard to prevent duplicate auto-load calls
@@ -131,7 +131,10 @@ export default function DashboardPage() {
           <div className="flex flex-col lg:flex-row items-start lg:items-center gap-3">
             {/* Shop Selector */}
             {shops.length > 0 && (
-              <Select defaultValue={selectedShop?.shopee_shop_id?.toString()}>
+              <Select
+                value={selectedShop?.shopee_shop_id?.toString()}
+                onValueChange={(val) => selectShop(Number(val))}
+              >
                 <SelectTrigger className="w-full lg:w-[200px] h-10 bg-secondary/50 border-border">
                   <SelectValue placeholder="Select shop" />
                 </SelectTrigger>

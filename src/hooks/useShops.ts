@@ -26,7 +26,6 @@ function getShopFromLocalStorage(): Shop | null {
 
 /**
  * Push localStorage tokens to Supabase so other devices can use them.
- * Only pushes if localStorage has tokens.
  */
 async function pushTokensToSupabase(): Promise<void> {
   const tokens = loadTokens();
@@ -54,6 +53,7 @@ async function pushTokensToSupabase(): Promise<void> {
 
 export function useShops() {
   const [shops, setShops] = useState<Shop[]>([]);
+  const [selectedShopId, setSelectedShopId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,7 +62,6 @@ export function useShops() {
     setError(null);
 
     // If localStorage has tokens, push them to Supabase first
-    // This ensures Supabase always has the freshest tokens
     await pushTokensToSupabase();
 
     let shopList: Shop[] = [];
@@ -75,7 +74,6 @@ export function useShops() {
         .order('created_at', { ascending: false });
 
       if (!fetchError && data && data.length > 0) {
-        // Merge fresh tokens from localStorage if available
         const localTokens = loadTokens();
         shopList = data.map((shop: Shop) => {
           if (localTokens && shop.shopee_shop_id === localTokens.shop_id) {
@@ -101,6 +99,12 @@ export function useShops() {
     }
 
     setShops(shopList);
+
+    // Auto-select first shop if none selected yet
+    if (shopList.length > 0 && !selectedShopId) {
+      setSelectedShopId(shopList[0].shopee_shop_id);
+    }
+
     setLoading(false);
 
     // Auto-update shop names that are still default "Shop XXXX"
@@ -131,7 +135,11 @@ export function useShops() {
     fetchShops();
   }, [fetchShops]);
 
-  const selectedShop = shops.length > 0 ? shops[0] : null;
+  const selectShop = useCallback((shopId: number) => {
+    setSelectedShopId(shopId);
+  }, []);
 
-  return { shops, loading, error, refetch: fetchShops, selectedShop };
+  const selectedShop = shops.find(s => s.shopee_shop_id === selectedShopId) || (shops.length > 0 ? shops[0] : null);
+
+  return { shops, loading, error, refetch: fetchShops, selectedShop, selectShop };
 }

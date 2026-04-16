@@ -22,7 +22,7 @@ export default function OrdersPage() {
     to: new Date(),
   });
 
-  const { shops, selectedShop } = useShops();
+  const { shops, selectedShop, selectShop } = useShops();
 
   const lastSyncKey = useRef('');
 
@@ -78,7 +78,10 @@ export default function OrdersPage() {
           <div className="flex flex-col lg:flex-row items-start lg:items-center gap-3">
             {/* Shop Selector */}
             {shops.length > 0 && (
-              <Select defaultValue={selectedShop?.shopee_shop_id?.toString()}>
+              <Select
+                value={selectedShop?.shopee_shop_id?.toString()}
+                onValueChange={(val) => selectShop(Number(val))}
+              >
                 <SelectTrigger className="w-full lg:w-[200px] h-10 bg-secondary/50 border-border">
                   <SelectValue placeholder="Select shop" />
                 </SelectTrigger>
