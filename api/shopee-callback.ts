@@ -64,6 +64,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Persist shop + tokens to Supabase (best-effort, don't block response)
+    let shopName = `Shop ${shop_id}`;
+    
+    try {
+      const { getShopInfo } = await import('./_lib/get-shop-info.js');
+      const actualName = await getShopInfo(Number(shop_id), data.access_token);
+      if (actualName) {
+        shopName = actualName;
+      }
+    } catch (err) {
+      console.warn('Could not fetch actual shop name:', err);
+    }
+
     try {
       const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
       const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -75,7 +87,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await supabase.from('shops').upsert(
           {
             shopee_shop_id: Number(shop_id),
-            name: `Shop ${shop_id}`,
+            name: shopName,
             access_token: data.access_token,
             refresh_token: data.refresh_token,
             expired_at: expiredAt,

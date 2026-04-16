@@ -42,9 +42,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const timestamp = Math.floor(Date.now() / 1000);
     const expiredAt = new Date((timestamp + (expire_in || 14400)) * 1000).toISOString();
 
+    let shopName = `Shop ${shop_id}`;
+    
+    // Attempt to get the actual shop_name from Shopee if the token is valid
+    try {
+      const { getShopInfo } = await import('./_lib/get-shop-info.js');
+      const actualName = await getShopInfo(Number(shop_id), access_token);
+      if (actualName) {
+        shopName = actualName;
+      }
+    } catch (err) {
+      console.warn('Could not fetch actual shop name:', err);
+    }
+
     const { error: dbError } = await supabase.from('shops').upsert({
       shopee_shop_id: Number(shop_id),
-      name: `Shop ${shop_id}`,
+      name: shopName,
       access_token,
       refresh_token,
       expired_at: expiredAt,
