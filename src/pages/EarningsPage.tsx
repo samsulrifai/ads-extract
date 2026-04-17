@@ -1,8 +1,18 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { format, subDays, differenceInDays } from 'date-fns';
 import {
+  TrendingUp,
+  TrendingDown,
+  ArrowUpRight,
+  ArrowDownRight,
+  BadgeDollarSign,
+  Truck,
   Receipt,
+  Ticket,
   RefreshCw,
+  CreditCard,
+  HandCoins,
+  Wallet,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -17,7 +27,12 @@ import { useShops } from '@/hooks/useShops';
 import { useEarnings } from '@/hooks/useEarnings';
 import type { DateRange } from '@/types';
 
-/** Format number as Rp with full digits, handles negative */
+const formatCurrency = (value: number) => {
+  if (Math.abs(value) >= 1_000_000) return `Rp ${(value / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(value) >= 1_000) return `Rp ${(value / 1_000).toFixed(0)}K`;
+  return `Rp ${Math.round(value).toLocaleString('id-ID')}`;
+};
+
 const formatAmount = (value: number) => {
   const abs = Math.abs(Math.round(value));
   const formatted = abs.toLocaleString('id-ID');
@@ -48,17 +63,13 @@ export default function EarningsPage() {
 
   const lastLoadKey = useRef('');
 
-  // Auto-load from DB
   useEffect(() => {
     if (!selectedShop || !dateRange.from || !dateRange.to) return;
-
     const days = differenceInDays(dateRange.to, dateRange.from);
     if (days > 60) return;
-
     const loadKey = `${selectedShop.shopee_shop_id}-${format(dateRange.from, 'yyyy-MM-dd')}-${format(dateRange.to, 'yyyy-MM-dd')}`;
     if (lastLoadKey.current === loadKey) return;
     lastLoadKey.current = loadKey;
-
     fetchFromDb({
       shop_id: selectedShop.shopee_shop_id,
       start_date: format(dateRange.from, 'yyyy-MM-dd'),
@@ -76,17 +87,29 @@ export default function EarningsPage() {
     });
   }, [selectedShop, dateRange, syncEscrow]);
 
-  // Filter orders by status
   const filteredOrders = useMemo(() => {
     if (statusFilter === 'all') return orders;
     return orders.filter((o) => o.order_status === statusFilter);
   }, [orders, statusFilter]);
 
-  // Compute detailed breakdown from filtered orders
   const d = useMemo(() => computeDetail(filteredOrders), [filteredOrders, computeDetail]);
 
+  const chartData = useMemo(() => {
+    const byDate: Record<string, { date: string; pendapatan: number; pengeluaran: number }> = {};
+    filteredOrders.forEach((o) => {
+      const dt = format(new Date(o.create_time), 'yyyy-MM-dd');
+      if (!byDate[dt]) byDate[dt] = { date: dt, pendapatan: 0, pengeluaran: 0 };
+      const detail = (o as any).escrow_detail;
+      if (detail) {
+        const origPrice = detail.order_original_price || detail.order_selling_price || 0;
+        byDate[dt].pendapatan += origPrice;
+        byDate[dt].pengeluaran += (detail.commission_fee || 0) + (detail.service_fee || 0) +
+          (detail.seller_transaction_fee || 0) + (detail.actual_shipping_fee || 0);
+      }
+    });
+    return Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
+  }, [filteredOrders]);
 
-  // Get unique statuses from data
   const availableStatuses = useMemo(() => {
     const statuses = new Set(orders.map((o) => o.order_status));
     return ORDER_STATUSES.filter((s) => s.value === 'all' || statuses.has(s.value));
@@ -94,171 +117,247 @@ export default function EarningsPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Page Header */}
+      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Penghasilan</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Ringkasan keuangan dari pesanan Shopee Anda.
-        </p>
+        <p className="text-sm text-muted-foreground mt-1">Ringkasan keuangan dari pesanan Shopee Anda.</p>
       </div>
 
-      {/* Controls Bar */}
+      {/* Controls */}
       <Card className="glass-card">
         <CardContent className="p-4">
           <div className="flex flex-col lg:flex-row items-start lg:items-center gap-3">
             {shops.length > 0 && (
-              <Select
-                value={selectedShop?.shopee_shop_id?.toString()}
-                onValueChange={(val) => selectShop(Number(val))}
-              >
+              <Select value={selectedShop?.shopee_shop_id?.toString()} onValueChange={(val) => selectShop(Number(val))}>
                 <SelectTrigger className="w-full lg:w-[200px] h-10 bg-secondary/50 border-border">
                   <SelectValue placeholder="Pilih toko" />
                 </SelectTrigger>
                 <SelectContent className="bg-card border-border">
                   {shops.map((shop) => (
-                    <SelectItem key={shop.id} value={shop.shopee_shop_id.toString()}>
-                      {shop.name}
-                    </SelectItem>
+                    <SelectItem key={shop.id} value={shop.shopee_shop_id.toString()}>{shop.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             )}
-
             <DateRangePicker dateRange={dateRange} onDateRangeChange={setDateRange} />
-
-            {/* Status Filter */}
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-full lg:w-[160px] h-10 bg-secondary/50 border-border">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent className="bg-card border-border">
                 {availableStatuses.map((s) => (
-                  <SelectItem key={s.value} value={s.value}>
-                    {s.label}
-                  </SelectItem>
+                  <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-
             <div className="flex gap-2 ml-auto">
-              <button
-                onClick={handleSync}
-                disabled={!selectedShop || syncing}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium
-                  bg-primary text-primary-foreground hover:bg-primary/90
-                  disabled:opacity-50 disabled:pointer-events-none transition-all"
-              >
+              <button onClick={handleSync} disabled={!selectedShop || syncing}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none transition-all">
                 <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
                 {syncing ? 'Syncing...' : 'Sync Penghasilan'}
               </button>
             </div>
           </div>
-
-          {/* Sync progress */}
           {syncProgress && (
-            <div className="mt-3 px-4 py-2.5 rounded-lg text-sm bg-primary/10 text-primary border border-primary/20">
-              ⟳ {syncProgress}
-            </div>
+            <div className="mt-3 px-4 py-2.5 rounded-lg text-sm bg-primary/10 text-primary border border-primary/20">⟳ {syncProgress}</div>
           )}
-
           {error && (
-            <div className="mt-3 px-4 py-2.5 rounded-lg text-sm bg-destructive/10 text-destructive border border-destructive/20">
-              ✗ {error}
-            </div>
+            <div className="mt-3 px-4 py-2.5 rounded-lg text-sm bg-destructive/10 text-destructive border border-destructive/20">✗ {error}</div>
           )}
-
           {shops.length === 0 && (
-            <div className="mt-3 px-4 py-2.5 rounded-lg text-sm bg-warning/10 text-warning border border-warning/20">
-              ⚠ Belum ada toko. Hubungkan toko di halaman <strong>Shops</strong>.
+            <div className="mt-3 px-4 py-2.5 rounded-lg text-sm bg-warning/10 text-warning border border-warning/20">⚠ Belum ada toko. Hubungkan toko di halaman <strong>Shops</strong>.</div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Total Pendapatan */}
+        <Card className="glass-card glass-card-hover gradient-border overflow-hidden">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total Pendapatan</CardTitle>
+              <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                <TrendingUp className="h-5 w-5 text-emerald-500" />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-emerald-500 mb-4">{formatCurrency(d.totalPendapatan)}</p>
+            <div className="space-y-2.5 pt-3 border-t border-border/50">
+              <div className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 text-muted-foreground"><BadgeDollarSign className="h-3.5 w-3.5" />Subtotal Pesanan</span>
+                <span className="font-medium">Rp {formatAmount(d.subtotalPesanan)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 text-muted-foreground"><Ticket className="h-3.5 w-3.5" />Voucher & Subsidi</span>
+                <span className="font-medium text-red-400">-Rp {formatAmount(d.totalVoucher)}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Total Pengeluaran */}
+        <Card className="glass-card glass-card-hover gradient-border overflow-hidden">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total Pengeluaran</CardTitle>
+              <div className="h-10 w-10 rounded-xl bg-red-500/10 flex items-center justify-center">
+                <TrendingDown className="h-5 w-5 text-red-500" />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-red-500 mb-4">{formatCurrency(d.totalPengeluaran)}</p>
+            <div className="space-y-2.5 pt-3 border-t border-border/50">
+              <div className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 text-muted-foreground"><Truck className="h-3.5 w-3.5" />Biaya Pengiriman</span>
+                <span className="font-medium">Rp {formatAmount(d.totalBiayaPengiriman)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 text-muted-foreground"><Receipt className="h-3.5 w-3.5" />Biaya Admin & Layanan</span>
+                <span className="font-medium">Rp {formatAmount(d.totalBiayaAdmin)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 text-muted-foreground"><CreditCard className="h-3.5 w-3.5" />Biaya Transaksi</span>
+                <span className="font-medium">Rp {formatAmount(d.seller_transaction_fee)}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Total Yang Dilepas */}
+        <Card className="glass-card glass-card-hover gradient-border overflow-hidden relative">
+          <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-transparent pointer-events-none" />
+          <CardHeader className="pb-2 relative">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium text-muted-foreground">Total Yang Dilepas</CardTitle>
+              <div className="h-10 w-10 rounded-xl bg-cyan-500/10 flex items-center justify-center">
+                <HandCoins className="h-5 w-5 text-cyan-500" />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="relative">
+            <p className={`text-3xl font-bold mb-4 ${d.totalNet >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>
+              {formatCurrency(d.totalNet)}
+            </p>
+            <div className="space-y-2.5 pt-3 border-t border-border/50">
+              <div className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 text-muted-foreground"><ArrowUpRight className="h-3.5 w-3.5 text-emerald-500" />Pendapatan</span>
+                <span className="font-medium text-emerald-500">+Rp {formatAmount(d.totalPendapatan)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="flex items-center gap-2 text-muted-foreground"><ArrowDownRight className="h-3.5 w-3.5 text-red-500" />Pengeluaran</span>
+                <span className="font-medium text-red-500">-Rp {formatAmount(d.totalPengeluaran)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm pt-2 border-t border-border/30">
+                <span className="text-muted-foreground text-xs">{filteredOrders.length} pesanan</span>
+                <span className="text-xs text-muted-foreground">{filteredOrders.filter((o) => o.escrow_synced).length} sudah sync</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Bar Chart */}
+      <Card className="glass-card">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <Wallet className="h-4 w-4 text-primary" />Tren Harian
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading || syncing ? (
+            <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">
+              <RefreshCw className="h-4 w-4 animate-spin mr-2" />Loading...
+            </div>
+          ) : chartData.length === 0 ? (
+            <div className="h-[200px] flex items-center justify-center text-sm text-muted-foreground">
+              Belum ada data. Sync Orders lalu Sync Penghasilan.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center gap-4 text-xs text-muted-foreground mb-3">
+                <span className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />Pendapatan</span>
+                <span className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-sm bg-red-500" />Pengeluaran</span>
+              </div>
+              <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
+                {chartData.map((c) => {
+                  const max = Math.max(...chartData.map((x) => Math.max(x.pendapatan, x.pengeluaran)), 1);
+                  return (
+                    <div key={c.date} className="flex items-center gap-3">
+                      <span className="text-xs text-muted-foreground w-20 shrink-0">{format(new Date(c.date), 'dd MMM')}</span>
+                      <div className="flex-1 space-y-1">
+                        <div className="h-4 rounded-sm bg-emerald-500/80 flex items-center transition-all duration-500" style={{ width: `${Math.max((c.pendapatan / max) * 100, 2)}%` }}>
+                          <span className="text-[10px] text-white font-medium px-1.5 truncate">{formatCurrency(c.pendapatan)}</span>
+                        </div>
+                        <div className="h-4 rounded-sm bg-red-500/80 flex items-center transition-all duration-500" style={{ width: `${Math.max((c.pengeluaran / max) * 100, 2)}%` }}>
+                          <span className="text-[10px] text-white font-medium px-1.5 truncate">{formatCurrency(c.pengeluaran)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Ringkasan Penghasilan - Shopee Style */}
+      {/* Ringkasan Penghasilan - Detail Breakdown */}
       <Card className="glass-card overflow-hidden">
         <CardContent className="p-0">
-          {loading || syncing ? (
-            <div className="py-16 text-center text-sm text-muted-foreground">
-              <RefreshCw className="h-4 w-4 animate-spin mx-auto mb-2" />
-              Loading...
-            </div>
-          ) : filteredOrders.length === 0 ? (
-            <div className="py-16 text-center text-sm text-muted-foreground">
-              Belum ada data. Sync Orders terlebih dahulu, lalu Sync Penghasilan.
-            </div>
-          ) : (
+          {filteredOrders.length > 0 && (
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gradient-to-r from-orange-500 to-orange-600">
-                  <th className="text-left py-3 px-4 text-white font-semibold text-sm" colSpan={2}>
-                    Ringkasan Penghasilan
-                  </th>
-                  <th className="text-right py-3 px-4 text-white font-semibold text-sm">
-                    Rp
-                  </th>
+                  <th className="text-left py-3 px-4 text-white font-semibold text-sm" colSpan={2}>Ringkasan Penghasilan</th>
+                  <th className="text-right py-3 px-4 text-white font-semibold text-sm">Rp</th>
                 </tr>
               </thead>
               <tbody>
-                {/* ===== 1. TOTAL PENDAPATAN ===== */}
                 <SectionHeader label="1. Total Pendapatan" value={d.totalPendapatan} />
-
-                {/* Subtotal Pesanan */}
                 <SubSectionHeader label="Subtotal Pesanan" value={d.subtotalPesanan} />
-                <DetailRow label="Harga Asli Produk" value={d.order_original_price || d.order_selling_price} indent={2} />
-                <DetailRow label="Total Diskon Produk" value={-d.seller_discount - d.shopee_discount} indent={2} />
-                <DetailRow label="Jumlah Pengembalian Dana ke Pembeli" value={-d.drc_adjustable_refund - d.seller_return_refund} indent={2} />
+                <DetailRow label="Harga Asli Produk" value={d.order_original_price || d.order_selling_price} />
+                <DetailRow label="Total Diskon Produk" value={-(d.seller_discount + d.shopee_discount)} />
+                <DetailRow label="Jumlah Pengembalian Dana ke Pembeli" value={-(d.drc_adjustable_refund + d.seller_return_refund)} />
 
-                {/* Voucher & Subsidi Shopee */}
                 <SubSectionHeader label="Voucher & Subsidi Shopee" value={-d.totalVoucher} />
-                <DetailRow label="Diskon Produk dari Shopee" value={-d.shopee_discount} indent={2} />
-                <DetailRow label="Voucher disponsori oleh Penjual" value={-d.voucher_from_seller} indent={2} />
-                <DetailRow label="Voucher dari Shopee" value={-d.voucher_from_shopee} indent={2} />
-                <DetailRow label="Cashback Koin disponsori Penjual" value={-d.seller_coin_cash_back} indent={2} />
-                <DetailRow label="Koin yang Digunakan Pembeli" value={-d.coin_used} indent={2} />
+                <DetailRow label="Diskon Produk dari Shopee" value={-d.shopee_discount} />
+                <DetailRow label="Voucher disponsori oleh Penjual" value={-d.voucher_from_seller} />
+                <DetailRow label="Voucher dari Shopee" value={-d.voucher_from_shopee} />
+                <DetailRow label="Cashback Koin disponsori Penjual" value={-d.seller_coin_cash_back} />
+                <DetailRow label="Koin yang Digunakan Pembeli" value={-d.coin_used} />
 
-                {/* ===== 2. TOTAL PENGELUARAN ===== */}
                 <SectionHeader label="2. Total Pengeluaran" value={-d.totalPengeluaran} isExpense />
-
-                {/* Total Biaya Pengiriman */}
                 <SubSectionHeader label="Total Biaya Pengiriman" value={-d.totalBiayaPengiriman} />
-                <DetailRow label="Ongkir Dibayar Pembeli" value={d.buyer_paid_shipping_fee} indent={2} />
-                <DetailRow label="Gratis Ongkir dari Shopee" value={d.shopee_shipping_rebate} indent={2} />
-                <DetailRow label="Diskon Ongkir Ditanggung Jasa Kirim" value={d.shipping_fee_discount_from_3pl} indent={2} />
-                <DetailRow label="Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim" value={-d.actual_shipping_fee} indent={2} />
-                <DetailRow label="Ongkos Kirim Pengembalian Barang" value={-d.reverse_shipping_fee} indent={2} />
+                <DetailRow label="Ongkir Dibayar Pembeli" value={d.buyer_paid_shipping_fee} />
+                <DetailRow label="Gratis Ongkir dari Shopee" value={d.shopee_shipping_rebate} />
+                <DetailRow label="Diskon Ongkir Ditanggung Jasa Kirim" value={d.shipping_fee_discount_from_3pl} />
+                <DetailRow label="Ongkir Diteruskan oleh Shopee ke Jasa Kirim" value={-d.actual_shipping_fee} />
+                <DetailRow label="Ongkos Kirim Pengembalian Barang" value={-d.reverse_shipping_fee} />
 
-                {/* Biaya Admin & Layanan */}
                 <SubSectionHeader label="Biaya Admin & Layanan" value={-d.totalBiayaAdmin} />
-                <DetailRow label="Biaya Komisi" value={-d.commission_fee} indent={2} />
-                <DetailRow label="Biaya Layanan" value={-d.service_fee} indent={2} />
-                <DetailRow label="Biaya Transaksi" value={-d.seller_transaction_fee} indent={2} />
-                <DetailRow label="Biaya Proses Pesanan" value={-d.seller_order_processing_fee} indent={2} />
-                <DetailRow label="Biaya Kampanye" value={-d.campaign_fee} indent={2} />
-                <DetailRow label="Biaya Administrasi (PPN)" value={-d.escrow_tax} indent={2} />
-                <DetailRow label="Biaya FBS" value={-d.fbs_fee} indent={2} />
-                <DetailRow label="Biaya Isi Saldo Otomatis" value={-d.ads_fee} indent={2} />
+                <DetailRow label="Biaya Komisi" value={-d.commission_fee} />
+                <DetailRow label="Biaya Layanan" value={-d.service_fee} />
+                <DetailRow label="Biaya Transaksi" value={-d.seller_transaction_fee} />
+                <DetailRow label="Biaya Proses Pesanan" value={-d.seller_order_processing_fee} />
+                <DetailRow label="Biaya Kampanye" value={-d.campaign_fee} />
+                <DetailRow label="Biaya Administrasi (PPN)" value={-d.escrow_tax} />
+                <DetailRow label="Biaya FBS" value={-d.fbs_fee} />
+                <DetailRow label="Biaya Isi Saldo Otomatis" value={-d.ads_fee} />
 
-                {/* ===== 3. TOTAL YANG DILEPAS ===== */}
                 <tr className="bg-gradient-to-r from-cyan-500/10 to-transparent border-t-2 border-cyan-500/30">
-                  <td colSpan={2} className="py-3.5 px-4">
-                    <span className="text-sm font-bold text-cyan-400">3. Total yang Dilepas</span>
-                  </td>
+                  <td colSpan={2} className="py-3.5 px-4"><span className="text-sm font-bold text-cyan-400">3. Total yang Dilepas</span></td>
                   <td className="py-3.5 px-4 text-right">
-                    <span className={`text-base font-bold ${d.totalNet >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>
-                      {formatAmount(d.totalNet)}
-                    </span>
+                    <span className={`text-base font-bold ${d.totalNet >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>{formatAmount(d.totalNet)}</span>
                   </td>
                 </tr>
-
-                {/* ===== SUMMARY FOOTER ===== */}
                 <tr className="border-t border-border/30">
                   <td colSpan={3} className="py-3 px-4">
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>{filteredOrders.length} pesanan</span>
-                      <span>
-                        {filteredOrders.filter((o) => o.escrow_synced).length} / {filteredOrders.length} sudah sync escrow
-                      </span>
+                      <span>{filteredOrders.filter((o) => o.escrow_synced).length} / {filteredOrders.length} sudah sync escrow</span>
                     </div>
                   </td>
                 </tr>
@@ -268,21 +367,18 @@ export default function EarningsPage() {
         </CardContent>
       </Card>
 
-      {/* Detail Per Pesanan Table */}
-      <Card className="glass-card">
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <Receipt className="h-4 w-4 text-primary" />
-              Detail Per Pesanan
-            </CardTitle>
-            <span className="text-xs text-muted-foreground">
-              {filteredOrders.length} pesanan
-            </span>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {filteredOrders.length > 0 && (
+      {/* Per-Order Detail Table */}
+      {filteredOrders.length > 0 && (
+        <Card className="glass-card">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Receipt className="h-4 w-4 text-primary" />Detail Per Pesanan
+              </CardTitle>
+              <span className="text-xs text-muted-foreground">{filteredOrders.length} pesanan</span>
+            </div>
+          </CardHeader>
+          <CardContent>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -297,11 +393,10 @@ export default function EarningsPage() {
                 </thead>
                 <tbody>
                   {filteredOrders.map((order) => {
-                    const voucher = (order.shopee_voucher || 0) + (order.seller_voucher || 0);
-                    const adminFee = (order.commission_fee || 0) + (order.service_fee || 0) + (order.transaction_fee || 0);
-                    const pendapatan = (order.original_price || 0) + voucher;
-                    const pengeluaran = (order.shipping_fee || 0) + adminFee;
-                    const net = pendapatan - pengeluaran;
+                    const det = (order as any).escrow_detail;
+                    const pendapatan = det ? (det.order_original_price || det.order_selling_price || 0) : 0;
+                    const pengeluaran = det ? ((det.commission_fee || 0) + (det.service_fee || 0) + (det.seller_transaction_fee || 0) + (det.actual_shipping_fee || 0)) : 0;
+                    const net = det ? (det.escrow_amount || (pendapatan - pengeluaran)) : 0;
 
                     return (
                       <tr key={order.order_sn} className="border-b border-border/30 hover:bg-white/[0.02] transition-colors">
@@ -309,16 +404,10 @@ export default function EarningsPage() {
                           {order.order_sn}
                           {!order.escrow_synced && <span className="ml-1 text-[10px] text-warning" title="Belum sync">⏳</span>}
                         </td>
-                        <td className="py-2.5 px-2 text-xs text-muted-foreground">
-                          {format(new Date(order.create_time), 'dd MMM yyyy')}
-                        </td>
+                        <td className="py-2.5 px-2 text-xs text-muted-foreground">{format(new Date(order.create_time), 'dd MMM yyyy')}</td>
                         <td className="py-2.5 px-2"><StatusBadge status={order.order_status} /></td>
-                        <td className="py-2.5 px-2 text-right text-xs text-emerald-400">
-                          {order.escrow_synced ? formatAmount(pendapatan) : '-'}
-                        </td>
-                        <td className="py-2.5 px-2 text-right text-xs text-red-400">
-                          {order.escrow_synced ? formatAmount(-pengeluaran) : '-'}
-                        </td>
+                        <td className="py-2.5 px-2 text-right text-xs text-emerald-400">{order.escrow_synced ? formatAmount(pendapatan) : '-'}</td>
+                        <td className="py-2.5 px-2 text-right text-xs text-red-400">{order.escrow_synced ? `-${formatAmount(pengeluaran)}` : '-'}</td>
                         <td className={`py-2.5 px-2 text-right text-xs font-semibold ${net >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>
                           {order.escrow_synced ? formatAmount(net) : '-'}
                         </td>
@@ -329,40 +418,29 @@ export default function EarningsPage() {
                 <tfoot>
                   <tr className="border-t-2 border-border bg-white/[0.02]">
                     <td colSpan={3} className="py-3 px-2 text-xs font-semibold">TOTAL</td>
-                    <td className="py-3 px-2 text-right text-xs font-bold text-emerald-400">
-                      {formatAmount(d.totalPendapatan)}
-                    </td>
-                    <td className="py-3 px-2 text-right text-xs font-bold text-red-400">
-                      {formatAmount(-d.totalPengeluaran)}
-                    </td>
-                    <td className={`py-3 px-2 text-right text-xs font-bold ${d.totalNet >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>
-                      {formatAmount(d.totalNet)}
-                    </td>
+                    <td className="py-3 px-2 text-right text-xs font-bold text-emerald-400">{formatAmount(d.totalPendapatan)}</td>
+                    <td className="py-3 px-2 text-right text-xs font-bold text-red-400">-{formatAmount(d.totalPengeluaran)}</td>
+                    <td className={`py-3 px-2 text-right text-xs font-bold ${d.totalNet >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>{formatAmount(d.totalNet)}</td>
                   </tr>
                 </tfoot>
               </table>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
 
-/* ===== Shopee-style Breakdown Row Components ===== */
-
+/* ===== Ringkasan Row Components ===== */
 function SectionHeader({ label, value, isExpense }: { label: string; value: number; isExpense?: boolean }) {
   return (
     <tr className={`border-t-2 ${isExpense ? 'border-red-500/30 bg-red-500/5' : 'border-emerald-500/30 bg-emerald-500/5'}`}>
       <td colSpan={2} className="py-3 px-4">
-        <span className={`text-sm font-bold ${isExpense ? 'text-red-400' : 'text-emerald-400'}`}>
-          {label}
-        </span>
+        <span className={`text-sm font-bold ${isExpense ? 'text-red-400' : 'text-emerald-400'}`}>{label}</span>
       </td>
       <td className="py-3 px-4 text-right">
-        <span className={`text-sm font-bold ${isExpense ? 'text-red-400' : 'text-emerald-400'}`}>
-          {formatAmount(value)}
-        </span>
+        <span className={`text-sm font-bold ${isExpense ? 'text-red-400' : 'text-emerald-400'}`}>{formatAmount(value)}</span>
       </td>
     </tr>
   );
@@ -371,26 +449,17 @@ function SectionHeader({ label, value, isExpense }: { label: string; value: numb
 function SubSectionHeader({ label, value }: { label: string; value: number }) {
   return (
     <tr className="border-t border-border/30 bg-white/[0.02]">
-      <td colSpan={2} className="py-2.5 px-4 pl-6">
-        <span className="text-sm font-semibold text-foreground/80">{label}</span>
-      </td>
-      <td className="py-2.5 px-4 text-right">
-        <span className="text-sm font-semibold text-foreground/80">{formatAmount(value)}</span>
-      </td>
+      <td colSpan={2} className="py-2.5 px-4 pl-6"><span className="text-sm font-semibold text-foreground/80">{label}</span></td>
+      <td className="py-2.5 px-4 text-right"><span className="text-sm font-semibold text-foreground/80">{formatAmount(value)}</span></td>
     </tr>
   );
 }
 
-function DetailRow({ label, value, indent = 1 }: { label: string; value: number; indent?: number }) {
-  const pl = indent === 2 ? 'pl-10' : 'pl-6';
+function DetailRow({ label, value }: { label: string; value: number }) {
   return (
     <tr className="border-t border-border/20 hover:bg-white/[0.01] transition-colors">
-      <td colSpan={2} className={`py-2 px-4 ${pl}`}>
-        <span className="text-sm text-muted-foreground">{label}</span>
-      </td>
-      <td className="py-2 px-4 text-right">
-        <span className="text-sm text-muted-foreground">{formatAmount(value)}</span>
-      </td>
+      <td colSpan={2} className="py-2 px-4 pl-10"><span className="text-sm text-muted-foreground">{label}</span></td>
+      <td className="py-2 px-4 text-right"><span className="text-sm text-muted-foreground">{formatAmount(value)}</span></td>
     </tr>
   );
 }
@@ -405,9 +474,7 @@ function StatusBadge({ status }: { status: string }) {
     UNPAID: { color: 'text-gray-400', bg: 'bg-gray-500/10' },
     PROCESSED: { color: 'text-purple-400', bg: 'bg-purple-500/10' },
   };
-
   const c = config[status] || { color: 'text-muted-foreground', bg: 'bg-secondary' };
-
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${c.color} ${c.bg}`}>
       {status.replace(/_/g, ' ')}
