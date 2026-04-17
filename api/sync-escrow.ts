@@ -56,14 +56,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     const supabaseAdmin = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-    // Get orders that haven't been escrow-synced yet
+    // Get orders that need escrow sync (not synced OR missing JSONB detail)
     const { data: orders, error: dbError } = await supabaseAdmin
       .from('orders')
       .select('order_sn')
       .eq('shop_id', shopIdNum)
       .gte('create_time', `${start_date}T00:00:00`)
       .lte('create_time', `${end_date}T23:59:59`)
-      .or('escrow_synced.is.null,escrow_synced.eq.false');
+      .or('escrow_synced.is.null,escrow_synced.eq.false,escrow_detail.is.null');
 
     if (dbError) {
       res.setHeader('Access-Control-Allow-Origin', '*');
