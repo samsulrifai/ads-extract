@@ -1,19 +1,8 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { format, subDays, differenceInDays } from 'date-fns';
 import {
-  Wallet,
-  TrendingUp,
-  TrendingDown,
-  ArrowUpRight,
-  ArrowDownRight,
-  BadgeDollarSign,
-  Truck,
   Receipt,
-  Ticket,
   RefreshCw,
-  Gift,
-  CreditCard,
-  HandCoins,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -28,14 +17,13 @@ import { useShops } from '@/hooks/useShops';
 import { useEarnings } from '@/hooks/useEarnings';
 import type { DateRange } from '@/types';
 
-const formatCurrency = (value: number) => {
-  if (value >= 1_000_000) return `Rp ${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `Rp ${(value / 1_000).toFixed(0)}K`;
-  return `Rp ${Math.round(value).toLocaleString('id-ID')}`;
+/** Format number as Rp with full digits, handles negative */
+const formatAmount = (value: number) => {
+  const abs = Math.abs(Math.round(value));
+  const formatted = abs.toLocaleString('id-ID');
+  if (value < 0) return `-${formatted}`;
+  return formatted;
 };
-
-const formatCurrencyFull = (value: number) =>
-  `Rp ${Math.round(value).toLocaleString('id-ID')}`;
 
 const ORDER_STATUSES = [
   { value: 'all', label: 'Semua Status' },
@@ -97,24 +85,6 @@ export default function EarningsPage() {
   // Compute KPIs from filtered orders
   const kpi = useMemo(() => computeKPI(filteredOrders), [filteredOrders, computeKPI]);
 
-  // Aggregate chart data by date
-  const chartData = useMemo(() => {
-    const byDate: Record<string, { date: string; pendapatan: number; pengeluaran: number }> = {};
-
-    filteredOrders.forEach((o) => {
-      const d = format(new Date(o.create_time), 'yyyy-MM-dd');
-      if (!byDate[d]) byDate[d] = { date: d, pendapatan: 0, pengeluaran: 0 };
-
-      const pendapatan = (o.original_price || 0) + (o.shopee_voucher || 0) + (o.seller_voucher || 0);
-      const pengeluaran =
-        (o.shipping_fee || 0) + (o.commission_fee || 0) + (o.service_fee || 0) + (o.transaction_fee || 0);
-
-      byDate[d].pendapatan += pendapatan;
-      byDate[d].pengeluaran += pengeluaran;
-    });
-
-    return Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
-  }, [filteredOrders]);
 
   // Get unique statuses from data
   const availableStatuses = useMemo(() => {
@@ -205,219 +175,92 @@ export default function EarningsPage() {
         </CardContent>
       </Card>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Total Pendapatan */}
-        <Card className="glass-card glass-card-hover gradient-border overflow-hidden">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Pendapatan
-              </CardTitle>
-              <div className="h-10 w-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                <TrendingUp className="h-5 w-5 text-emerald-500" />
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-emerald-500 mb-4">
-              {formatCurrency(kpi.totalPendapatan)}
-            </p>
-            <div className="space-y-2.5 pt-3 border-t border-border/50">
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <BadgeDollarSign className="h-3.5 w-3.5" />
-                  Sub Total Pesanan
-                </span>
-                <span className="font-medium">{formatCurrencyFull(kpi.totalOriginalPrice)}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <Ticket className="h-3.5 w-3.5" />
-                  Voucher Shopee
-                </span>
-                <span className="font-medium">{formatCurrencyFull(kpi.totalShopeeVoucher)}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <Gift className="h-3.5 w-3.5" />
-                  Voucher Seller
-                </span>
-                <span className="font-medium">{formatCurrencyFull(kpi.totalSellerVoucher)}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Total Pengeluaran */}
-        <Card className="glass-card glass-card-hover gradient-border overflow-hidden">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Pengeluaran
-              </CardTitle>
-              <div className="h-10 w-10 rounded-xl bg-red-500/10 flex items-center justify-center">
-                <TrendingDown className="h-5 w-5 text-red-500" />
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-red-500 mb-4">
-              {formatCurrency(kpi.totalPengeluaran)}
-            </p>
-            <div className="space-y-2.5 pt-3 border-t border-border/50">
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <Truck className="h-3.5 w-3.5" />
-                  Biaya Pengiriman
-                </span>
-                <span className="font-medium">{formatCurrencyFull(kpi.totalShippingFee)}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <Receipt className="h-3.5 w-3.5" />
-                  Biaya Admin & Layanan
-                </span>
-                <span className="font-medium">
-                  {formatCurrencyFull(kpi.totalCommissionFee + kpi.totalServiceFee)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <CreditCard className="h-3.5 w-3.5" />
-                  Biaya Transaksi
-                </span>
-                <span className="font-medium">{formatCurrencyFull(kpi.totalTransactionFee)}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Total Yang Dilepas (Net) */}
-        <Card className="glass-card glass-card-hover gradient-border overflow-hidden relative">
-          <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-transparent pointer-events-none" />
-          <CardHeader className="pb-2 relative">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Yang Dilepas
-              </CardTitle>
-              <div className="h-10 w-10 rounded-xl bg-cyan-500/10 flex items-center justify-center">
-                <HandCoins className="h-5 w-5 text-cyan-500" />
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="relative">
-            <p className={`text-3xl font-bold mb-4 ${kpi.totalNet >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>
-              {formatCurrency(kpi.totalNet)}
-            </p>
-            <div className="space-y-2.5 pt-3 border-t border-border/50">
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <ArrowUpRight className="h-3.5 w-3.5 text-emerald-500" />
-                  Pendapatan
-                </span>
-                <span className="font-medium text-emerald-500">
-                  +{formatCurrencyFull(kpi.totalPendapatan)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-muted-foreground">
-                  <ArrowDownRight className="h-3.5 w-3.5 text-red-500" />
-                  Pengeluaran
-                </span>
-                <span className="font-medium text-red-500">
-                  -{formatCurrencyFull(kpi.totalPengeluaran)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-sm pt-2 border-t border-border/30">
-                <span className="text-muted-foreground text-xs">
-                  {filteredOrders.length} pesanan
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {filteredOrders.filter((o) => o.escrow_synced).length} sudah sync
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Bar Chart - Pendapatan vs Pengeluaran */}
-      <Card className="glass-card">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
-            <Wallet className="h-4 w-4 text-primary" />
-            Tren Harian
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      {/* Ringkasan Penghasilan - Shopee Style */}
+      <Card className="glass-card overflow-hidden">
+        <CardContent className="p-0">
           {loading || syncing ? (
-            <div className="h-[250px] flex items-center justify-center text-sm text-muted-foreground">
-              <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+            <div className="py-16 text-center text-sm text-muted-foreground">
+              <RefreshCw className="h-4 w-4 animate-spin mx-auto mb-2" />
               Loading...
             </div>
-          ) : chartData.length === 0 ? (
-            <div className="h-[250px] flex items-center justify-center text-sm text-muted-foreground">
-              Belum ada data. Klik "Sync Penghasilan" untuk mengambil data.
+          ) : filteredOrders.length === 0 ? (
+            <div className="py-16 text-center text-sm text-muted-foreground">
+              Belum ada data. Sync Orders terlebih dahulu, lalu Sync Penghasilan.
             </div>
           ) : (
-            <div className="space-y-2">
-              {/* Chart Legend */}
-              <div className="flex items-center gap-4 text-xs text-muted-foreground mb-3">
-                <span className="flex items-center gap-1.5">
-                  <div className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />
-                  Pendapatan
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <div className="h-2.5 w-2.5 rounded-sm bg-red-500" />
-                  Pengeluaran
-                </span>
-              </div>
-              {/* Simple bar chart */}
-              <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
-                {chartData.map((d) => {
-                  const max = Math.max(
-                    ...chartData.map((c) => Math.max(c.pendapatan, c.pengeluaran)),
-                    1
-                  );
-                  const pW = (d.pendapatan / max) * 100;
-                  const eW = (d.pengeluaran / max) * 100;
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gradient-to-r from-orange-500 to-orange-600">
+                  <th className="text-left py-3 px-4 text-white font-semibold text-sm" colSpan={2}>
+                    Ringkasan Penghasilan
+                  </th>
+                  <th className="text-right py-3 px-4 text-white font-semibold text-sm">
+                    Rp
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* ===== 1. TOTAL PENDAPATAN ===== */}
+                <SectionHeader label="1. Total Pendapatan" value={kpi.totalPendapatan} />
 
-                  return (
-                    <div key={d.date} className="group">
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-muted-foreground w-20 shrink-0">
-                          {format(new Date(d.date), 'dd MMM')}
-                        </span>
-                        <div className="flex-1 space-y-1">
-                          <div
-                            className="h-4 rounded-sm bg-emerald-500/80 transition-all duration-500 flex items-center"
-                            style={{ width: `${Math.max(pW, 2)}%` }}
-                          >
-                            <span className="text-[10px] text-white font-medium px-1.5 truncate">
-                              {formatCurrency(d.pendapatan)}
-                            </span>
-                          </div>
-                          <div
-                            className="h-4 rounded-sm bg-red-500/80 transition-all duration-500 flex items-center"
-                            style={{ width: `${Math.max(eW, 2)}%` }}
-                          >
-                            <span className="text-[10px] text-white font-medium px-1.5 truncate">
-                              {formatCurrency(d.pengeluaran)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+                {/* Subtotal Pesanan */}
+                <SubSectionHeader label="Subtotal Pesanan" value={kpi.totalOriginalPrice} />
+                <DetailRow label="Harga Asli Produk" value={kpi.totalOriginalPrice} indent={2} />
+
+                {/* Voucher & Subsidi Shopee */}
+                <SubSectionHeader
+                  label="Voucher & Subsidi Shopee"
+                  value={-(kpi.totalShopeeVoucher + kpi.totalSellerVoucher)}
+                />
+                <DetailRow label="Voucher dari Shopee" value={-kpi.totalShopeeVoucher} indent={2} />
+                <DetailRow label="Voucher disponsori oleh Penjual" value={-kpi.totalSellerVoucher} indent={2} />
+
+                {/* ===== 2. TOTAL PENGELUARAN ===== */}
+                <SectionHeader label="2. Total Pengeluaran" value={-kpi.totalPengeluaran} isExpense />
+
+                {/* Biaya Pengiriman */}
+                <SubSectionHeader label="Total Biaya Pengiriman" value={-kpi.totalShippingFee} />
+                <DetailRow label="Biaya Pengiriman" value={-kpi.totalShippingFee} indent={2} />
+
+                {/* Biaya Admin & Layanan */}
+                <SubSectionHeader
+                  label="Biaya Admin & Layanan"
+                  value={-(kpi.totalCommissionFee + kpi.totalServiceFee + kpi.totalTransactionFee)}
+                />
+                <DetailRow label="Biaya Komisi" value={-kpi.totalCommissionFee} indent={2} />
+                <DetailRow label="Biaya Layanan" value={-kpi.totalServiceFee} indent={2} />
+                <DetailRow label="Biaya Transaksi" value={-kpi.totalTransactionFee} indent={2} />
+
+                {/* ===== 3. TOTAL YANG DILEPAS ===== */}
+                <tr className="bg-gradient-to-r from-cyan-500/10 to-transparent border-t-2 border-cyan-500/30">
+                  <td colSpan={2} className="py-3.5 px-4">
+                    <span className="text-sm font-bold text-cyan-400">3. Total yang Dilepas</span>
+                  </td>
+                  <td className="py-3.5 px-4 text-right">
+                    <span className={`text-base font-bold ${kpi.totalNet >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>
+                      {formatAmount(kpi.totalNet)}
+                    </span>
+                  </td>
+                </tr>
+
+                {/* ===== SUMMARY FOOTER ===== */}
+                <tr className="border-t border-border/30">
+                  <td colSpan={3} className="py-3 px-4">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{filteredOrders.length} pesanan</span>
+                      <span>
+                        {filteredOrders.filter((o) => o.escrow_synced).length} / {filteredOrders.length} sudah sync escrow
+                      </span>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           )}
         </CardContent>
       </Card>
 
-      {/* Detail Table */}
+      {/* Detail Per Pesanan Table */}
       <Card className="glass-card">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
@@ -431,125 +274,61 @@ export default function EarningsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {loading || syncing ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">
-              <RefreshCw className="h-4 w-4 animate-spin mx-auto mb-2" />
-              Loading...
-            </div>
-          ) : filteredOrders.length === 0 ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">
-              Belum ada data pesanan.
-            </div>
-          ) : (
+          {filteredOrders.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="text-left py-3 px-2 text-xs font-medium text-muted-foreground">
-                      Order SN
-                    </th>
-                    <th className="text-left py-3 px-2 text-xs font-medium text-muted-foreground">
-                      Tanggal
-                    </th>
-                    <th className="text-left py-3 px-2 text-xs font-medium text-muted-foreground">
-                      Status
-                    </th>
-                    <th className="text-right py-3 px-2 text-xs font-medium text-muted-foreground">
-                      Sub Total
-                    </th>
-                    <th className="text-right py-3 px-2 text-xs font-medium text-muted-foreground">
-                      Voucher
-                    </th>
-                    <th className="text-right py-3 px-2 text-xs font-medium text-muted-foreground">
-                      Biaya Kirim
-                    </th>
-                    <th className="text-right py-3 px-2 text-xs font-medium text-muted-foreground">
-                      Admin & Fee
-                    </th>
-                    <th className="text-right py-3 px-2 text-xs font-medium text-muted-foreground">
-                      Net
-                    </th>
+                    <th className="text-left py-3 px-2 text-xs font-medium text-muted-foreground">Order SN</th>
+                    <th className="text-left py-3 px-2 text-xs font-medium text-muted-foreground">Tanggal</th>
+                    <th className="text-left py-3 px-2 text-xs font-medium text-muted-foreground">Status</th>
+                    <th className="text-right py-3 px-2 text-xs font-medium text-muted-foreground">Pendapatan</th>
+                    <th className="text-right py-3 px-2 text-xs font-medium text-muted-foreground">Pengeluaran</th>
+                    <th className="text-right py-3 px-2 text-xs font-medium text-muted-foreground">Dilepas</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredOrders.map((order) => {
                     const voucher = (order.shopee_voucher || 0) + (order.seller_voucher || 0);
-                    const adminFee =
-                      (order.commission_fee || 0) +
-                      (order.service_fee || 0) +
-                      (order.transaction_fee || 0);
+                    const adminFee = (order.commission_fee || 0) + (order.service_fee || 0) + (order.transaction_fee || 0);
                     const pendapatan = (order.original_price || 0) + voucher;
-                    const net = pendapatan - (order.shipping_fee || 0) - adminFee;
+                    const pengeluaran = (order.shipping_fee || 0) + adminFee;
+                    const net = pendapatan - pengeluaran;
 
                     return (
-                      <tr
-                        key={order.order_sn}
-                        className="border-b border-border/50 hover:bg-white/[0.02] transition-colors"
-                      >
+                      <tr key={order.order_sn} className="border-b border-border/30 hover:bg-white/[0.02] transition-colors">
                         <td className="py-2.5 px-2 font-mono text-xs">
                           {order.order_sn}
-                          {!order.escrow_synced && (
-                            <span className="ml-1 text-[10px] text-warning" title="Belum sync escrow">
-                              ⏳
-                            </span>
-                          )}
+                          {!order.escrow_synced && <span className="ml-1 text-[10px] text-warning" title="Belum sync">⏳</span>}
                         </td>
                         <td className="py-2.5 px-2 text-xs text-muted-foreground">
                           {format(new Date(order.create_time), 'dd MMM yyyy')}
                         </td>
-                        <td className="py-2.5 px-2">
-                          <StatusBadge status={order.order_status} />
-                        </td>
-                        <td className="py-2.5 px-2 text-right text-xs">
-                          {formatCurrencyFull(order.original_price || 0)}
-                        </td>
+                        <td className="py-2.5 px-2"><StatusBadge status={order.order_status} /></td>
                         <td className="py-2.5 px-2 text-right text-xs text-emerald-400">
-                          {voucher > 0 ? `+${formatCurrencyFull(voucher)}` : '-'}
+                          {order.escrow_synced ? formatAmount(pendapatan) : '-'}
                         </td>
                         <td className="py-2.5 px-2 text-right text-xs text-red-400">
-                          {order.shipping_fee ? `-${formatCurrencyFull(order.shipping_fee)}` : '-'}
+                          {order.escrow_synced ? formatAmount(-pengeluaran) : '-'}
                         </td>
-                        <td className="py-2.5 px-2 text-right text-xs text-red-400">
-                          {adminFee > 0 ? `-${formatCurrencyFull(adminFee)}` : '-'}
-                        </td>
-                        <td
-                          className={`py-2.5 px-2 text-right text-xs font-semibold ${
-                            net >= 0 ? 'text-cyan-400' : 'text-red-400'
-                          }`}
-                        >
-                          {order.escrow_synced ? formatCurrencyFull(net) : '-'}
+                        <td className={`py-2.5 px-2 text-right text-xs font-semibold ${net >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>
+                          {order.escrow_synced ? formatAmount(net) : '-'}
                         </td>
                       </tr>
                     );
                   })}
                 </tbody>
-                {/* Totals row */}
                 <tfoot>
                   <tr className="border-t-2 border-border bg-white/[0.02]">
-                    <td colSpan={3} className="py-3 px-2 text-xs font-semibold">
-                      TOTAL
+                    <td colSpan={3} className="py-3 px-2 text-xs font-semibold">TOTAL</td>
+                    <td className="py-3 px-2 text-right text-xs font-bold text-emerald-400">
+                      {formatAmount(kpi.totalPendapatan)}
                     </td>
-                    <td className="py-3 px-2 text-right text-xs font-semibold">
-                      {formatCurrencyFull(kpi.totalOriginalPrice)}
+                    <td className="py-3 px-2 text-right text-xs font-bold text-red-400">
+                      {formatAmount(-kpi.totalPengeluaran)}
                     </td>
-                    <td className="py-3 px-2 text-right text-xs font-semibold text-emerald-400">
-                      +{formatCurrencyFull(kpi.totalShopeeVoucher + kpi.totalSellerVoucher)}
-                    </td>
-                    <td className="py-3 px-2 text-right text-xs font-semibold text-red-400">
-                      -{formatCurrencyFull(kpi.totalShippingFee)}
-                    </td>
-                    <td className="py-3 px-2 text-right text-xs font-semibold text-red-400">
-                      -
-                      {formatCurrencyFull(
-                        kpi.totalCommissionFee + kpi.totalServiceFee + kpi.totalTransactionFee
-                      )}
-                    </td>
-                    <td
-                      className={`py-3 px-2 text-right text-xs font-bold ${
-                        kpi.totalNet >= 0 ? 'text-cyan-400' : 'text-red-400'
-                      }`}
-                    >
-                      {formatCurrencyFull(kpi.totalNet)}
+                    <td className={`py-3 px-2 text-right text-xs font-bold ${kpi.totalNet >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>
+                      {formatAmount(kpi.totalNet)}
                     </td>
                   </tr>
                 </tfoot>
@@ -559,6 +338,52 @@ export default function EarningsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/* ===== Shopee-style Breakdown Row Components ===== */
+
+function SectionHeader({ label, value, isExpense }: { label: string; value: number; isExpense?: boolean }) {
+  return (
+    <tr className={`border-t-2 ${isExpense ? 'border-red-500/30 bg-red-500/5' : 'border-emerald-500/30 bg-emerald-500/5'}`}>
+      <td colSpan={2} className="py-3 px-4">
+        <span className={`text-sm font-bold ${isExpense ? 'text-red-400' : 'text-emerald-400'}`}>
+          {label}
+        </span>
+      </td>
+      <td className="py-3 px-4 text-right">
+        <span className={`text-sm font-bold ${isExpense ? 'text-red-400' : 'text-emerald-400'}`}>
+          {formatAmount(value)}
+        </span>
+      </td>
+    </tr>
+  );
+}
+
+function SubSectionHeader({ label, value }: { label: string; value: number }) {
+  return (
+    <tr className="border-t border-border/30 bg-white/[0.02]">
+      <td colSpan={2} className="py-2.5 px-4 pl-6">
+        <span className="text-sm font-semibold text-foreground/80">{label}</span>
+      </td>
+      <td className="py-2.5 px-4 text-right">
+        <span className="text-sm font-semibold text-foreground/80">{formatAmount(value)}</span>
+      </td>
+    </tr>
+  );
+}
+
+function DetailRow({ label, value, indent = 1 }: { label: string; value: number; indent?: number }) {
+  const pl = indent === 2 ? 'pl-10' : 'pl-6';
+  return (
+    <tr className="border-t border-border/20 hover:bg-white/[0.01] transition-colors">
+      <td colSpan={2} className={`py-2 px-4 ${pl}`}>
+        <span className="text-sm text-muted-foreground">{label}</span>
+      </td>
+      <td className="py-2 px-4 text-right">
+        <span className="text-sm text-muted-foreground">{formatAmount(value)}</span>
+      </td>
+    </tr>
   );
 }
 
