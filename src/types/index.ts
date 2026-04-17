@@ -64,6 +64,32 @@ export interface Order {
   item_count: number;
   product_name: string;
   sku: string;
+  // Escrow financial fields
+  original_price: number;
+  seller_voucher: number;
+  shopee_voucher: number;
+  shipping_fee: number;
+  commission_fee: number;
+  service_fee: number;
+  transaction_fee: number;
+  escrow_amount: number;
+  escrow_synced: boolean;
+}
+
+export interface EarningsKPI {
+  // Pendapatan
+  totalOriginalPrice: number;
+  totalSellerVoucher: number;
+  totalShopeeVoucher: number;
+  totalPendapatan: number;
+  // Pengeluaran
+  totalShippingFee: number;
+  totalCommissionFee: number;
+  totalServiceFee: number;
+  totalTransactionFee: number;
+  totalPengeluaran: number;
+  // Net
+  totalNet: number;
 }
 
 export interface SyncOrdersResponse {

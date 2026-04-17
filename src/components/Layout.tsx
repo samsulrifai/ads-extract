@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Store,
   Megaphone,
+  Wallet,
   ShoppingBag,
   Menu,
   X,
@@ -19,6 +20,7 @@ import { useAuth } from '@/contexts/AuthContext';
 const commonNavItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/ads', icon: Megaphone, label: 'Ads' },
+  { to: '/earnings', icon: Wallet, label: 'Penghasilan' },
   { to: '/orders', icon: ShoppingBag, label: 'Orders' },
   { to: '/shops', icon: Store, label: 'Shops' },
 ];

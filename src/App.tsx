@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import DashboardPage from '@/pages/DashboardPage';
 import AdsPage from '@/pages/AdsPage';
+import EarningsPage from '@/pages/EarningsPage';
 import ShopsPage from '@/pages/ShopsPage';
 import OrdersPage from '@/pages/OrdersPage';
 import CallbackPage from '@/pages/CallbackPage';
@@ -21,6 +22,7 @@ export default function App() {
           <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/ads" element={<AdsPage />} />
+            <Route path="/earnings" element={<EarningsPage />} />
             <Route path="/orders" element={<OrdersPage />} />
             <Route path="/shops" element={<ShopsPage />} />
             {/* Will make this adminOnly later */}
