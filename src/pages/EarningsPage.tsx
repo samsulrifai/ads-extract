@@ -11,6 +11,7 @@ import {
   Ticket,
   RefreshCw,
   CreditCard,
+  HandCoins,
   Wallet,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -48,17 +49,6 @@ const formatAmount = (value: number) => {
   if (value < 0) return `-${formatted}`;
   return formatted;
 };
-
-const ORDER_STATUSES = [
-  { value: 'all', label: 'Semua Status' },
-  { value: 'COMPLETED', label: 'Completed' },
-  { value: 'SHIPPED', label: 'Shipped' },
-  { value: 'READY_TO_SHIP', label: 'Ready to Ship' },
-  { value: 'IN_CANCEL', label: 'In Cancel' },
-  { value: 'CANCELLED', label: 'Cancelled' },
-  { value: 'UNPAID', label: 'Unpaid' },
-  { value: 'PROCESSED', label: 'Processed' },
-];
 
 export default function EarningsPage() {
   const { dateRange, setDateRange, statusFilter, setStatusFilter, shopId, setShopId } = useFilterStore();
@@ -128,11 +118,6 @@ export default function EarningsPage() {
     });
     return Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
   }, [filteredOrders]);
-
-  const availableStatuses = useMemo(() => {
-    const statuses = new Set(orders.map((o) => o.order_status));
-    return ORDER_STATUSES.filter((s) => s.value === 'all' || statuses.has(s.value));
-  }, [orders]);
 
   return (
     <div className="space-y-6 animate-fade-in">
