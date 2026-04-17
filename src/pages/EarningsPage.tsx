@@ -11,9 +11,9 @@ import {
   Ticket,
   RefreshCw,
   CreditCard,
-  HandCoins,
   Wallet,
 } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   AreaChart,
   Area,
@@ -105,6 +105,8 @@ export default function EarningsPage() {
   }, [selectedShop, dateRange, syncEscrow]);
 
   const filteredOrders = useMemo(() => {
+    if (statusFilter === 'released') return orders.filter((o) => o.order_status === 'COMPLETED');
+    if (statusFilter === 'pending') return orders.filter((o) => o.order_status !== 'COMPLETED' && o.order_status !== 'CANCELLED' && o.order_status !== 'IN_CANCEL');
     if (statusFilter === 'all') return orders;
     return orders.filter((o) => o.order_status === statusFilter);
   }, [orders, statusFilter]);
@@ -157,16 +159,6 @@ export default function EarningsPage() {
               </Select>
             )}
             <DateRangePicker dateRange={dateRange} onDateRangeChange={setDateRange} />
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full lg:w-[160px] h-10 bg-secondary/50 border-border">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent className="bg-card border-border">
-                {availableStatuses.map((s) => (
-                  <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
             <div className="flex gap-2 ml-auto">
               <button onClick={handleSync} disabled={!selectedShop || syncing}
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none transition-all">
@@ -186,6 +178,25 @@ export default function EarningsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Tab Filter: Sudah Dilepas vs Belum Dilepas */}
+      <Tabs 
+        value={['all', 'released', 'pending'].includes(statusFilter) ? statusFilter : 'all'} 
+        onValueChange={setStatusFilter} 
+        className="w-full"
+      >
+        <TabsList className="grid w-full grid-cols-3 bg-secondary/50 h-11 p-1 mb-0 rounded-xl border border-border/50">
+          <TabsTrigger value="all" className="rounded-lg text-xs lg:text-sm data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm">
+            Semua Pesanan
+          </TabsTrigger>
+          <TabsTrigger value="pending" className="rounded-lg text-xs lg:text-sm data-[state=active]:bg-amber-500/15 data-[state=active]:text-amber-500 data-[state=active]:shadow-sm">
+            Belum Dilepas (Proses)
+          </TabsTrigger>
+          <TabsTrigger value="released" className="rounded-lg text-xs lg:text-sm data-[state=active]:bg-emerald-500/15 data-[state=active]:text-emerald-500 data-[state=active]:shadow-sm">
+            Sudah Dilepas (Selesai)
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
