@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Store,
+  Megaphone,
   ShoppingBag,
   Menu,
   X,
@@ -17,6 +18,7 @@ import { useAuth } from '@/contexts/AuthContext';
 
 const commonNavItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/ads', icon: Megaphone, label: 'Ads' },
   { to: '/orders', icon: ShoppingBag, label: 'Orders' },
   { to: '/shops', icon: Store, label: 'Shops' },
 ];
