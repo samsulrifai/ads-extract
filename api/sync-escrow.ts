@@ -89,41 +89,58 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Fetch escrow details per order (with rate limiting)
+    // Limit orders per sync to avoid Vercel timeout (max ~60s for Pro, ~10s for Hobby)
+    const MAX_PER_SYNC = 50;
+    const ordersToSync = orders.slice(0, MAX_PER_SYNC);
+
+    // Fetch escrow details in parallel batches of 5
     let synced = 0;
     const errors: string[] = [];
+    const BATCH_SIZE = 5;
 
-    for (const order of orders) {
-      try {
-        const escrowData = await fetchEscrowDetail(access_token, shopIdNum, order.order_sn);
+    for (let i = 0; i < ordersToSync.length; i += BATCH_SIZE) {
+      const batch = ordersToSync.slice(i, i + BATCH_SIZE);
 
-        if (escrowData) {
-          const { error: updateError } = await supabaseAdmin
-            .from('orders')
-            .update({
-              original_price: escrowData.original_price || 0,
-              seller_voucher: escrowData.seller_voucher || 0,
-              shopee_voucher: escrowData.shopee_voucher || 0,
-              shipping_fee: escrowData.shipping_fee || 0,
-              commission_fee: escrowData.commission_fee || 0,
-              service_fee: escrowData.service_fee || 0,
-              transaction_fee: escrowData.transaction_fee || 0,
-              escrow_amount: escrowData.escrow_amount || 0,
-              escrow_synced: true,
-            })
-            .eq('order_sn', order.order_sn);
+      const results = await Promise.allSettled(
+        batch.map(async (order) => {
+          const escrowData = await fetchEscrowDetail(access_token, shopIdNum, order.order_sn);
 
-          if (updateError) {
-            errors.push(`Update ${order.order_sn}: ${updateError.message}`);
-          } else {
-            synced++;
+          if (escrowData) {
+            const { error: updateError } = await supabaseAdmin
+              .from('orders')
+              .update({
+                original_price: escrowData.original_price || 0,
+                seller_voucher: escrowData.seller_voucher || 0,
+                shopee_voucher: escrowData.shopee_voucher || 0,
+                shipping_fee: escrowData.shipping_fee || 0,
+                commission_fee: escrowData.commission_fee || 0,
+                service_fee: escrowData.service_fee || 0,
+                transaction_fee: escrowData.transaction_fee || 0,
+                escrow_amount: escrowData.escrow_amount || 0,
+                escrow_synced: true,
+              })
+              .eq('order_sn', order.order_sn);
+
+            if (updateError) {
+              throw new Error(`Update ${order.order_sn}: ${updateError.message}`);
+            }
+            return order.order_sn;
           }
-        }
+          return null;
+        })
+      );
 
-        // Rate limit: 50ms between requests to avoid hitting Shopee limits
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      } catch (err: any) {
-        errors.push(`${order.order_sn}: ${err.message}`);
+      results.forEach((result) => {
+        if (result.status === 'fulfilled' && result.value) {
+          synced++;
+        } else if (result.status === 'rejected') {
+          errors.push(result.reason?.message || 'Unknown error');
+        }
+      });
+
+      // Small delay between batches to be safe with rate limits
+      if (i + BATCH_SIZE < ordersToSync.length) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
 
@@ -141,6 +158,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       synced,
       total_orders: orders.length,
+      remaining: Math.max(0, orders.length - MAX_PER_SYNC),
       errors: errors.length > 0 ? errors : undefined,
       records: allOrders || [],
     });

@@ -46,32 +46,53 @@ export function useEarnings() {
     }
   }, []);
 
-  // Sync escrow data from Shopee API
+  // Sync escrow data from Shopee API (auto-continues if there are remaining orders)
   const syncEscrow = useCallback(async (params: SyncRequest) => {
     setSyncing(true);
     setError(null);
-    setSyncProgress('Syncing financial data from Shopee...');
+    let totalSynced = 0;
+    let batch = 1;
+
     try {
-      const response = await fetch(`${API_BASE}/api/sync-escrow`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params),
-      });
+      let hasMore = true;
 
-      const result = await response.json();
+      while (hasMore) {
+        setSyncProgress(`Batch ${batch}: Syncing financial data...`);
 
-      if (!result.success) {
-        throw new Error(result.error || 'Sync failed');
+        const response = await fetch(`${API_BASE}/api/sync-escrow`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params),
+        });
+
+        const result = await response.json();
+
+        if (!result.success) {
+          throw new Error(result.error || 'Sync failed');
+        }
+
+        totalSynced += result.synced || 0;
+
+        if (result.records) {
+          setOrders(result.records as Order[]);
+        }
+
+        const remaining = result.remaining || 0;
+        setSyncProgress(
+          `Batch ${batch}: ${result.synced} synced. Total: ${totalSynced}.${remaining > 0 ? ` Remaining: ${remaining}...` : ''}`
+        );
+
+        hasMore = remaining > 0;
+        batch++;
+
+        // Small delay between batches
+        if (hasMore) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
       }
 
-      setSyncProgress(`Synced ${result.synced} of ${result.total_orders || 0} orders`);
-
-      if (result.records) {
-        setOrders(result.records as Order[]);
-      }
-
-      // Clear progress after 3 seconds
-      setTimeout(() => setSyncProgress(''), 3000);
+      setSyncProgress(`✓ Selesai! ${totalSynced} pesanan berhasil disync.`);
+      setTimeout(() => setSyncProgress(''), 4000);
     } catch (err: any) {
       setError(err.message || 'Failed to sync escrow data');
     } finally {
