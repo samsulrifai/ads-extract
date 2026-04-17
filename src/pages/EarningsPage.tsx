@@ -44,7 +44,7 @@ export default function EarningsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
 
   const { shops, selectedShop, selectShop } = useShops();
-  const { orders, loading, syncing, error, syncProgress, fetchFromDb, syncEscrow, computeKPI } = useEarnings();
+  const { orders, loading, syncing, error, syncProgress, fetchFromDb, syncEscrow, computeDetail } = useEarnings();
 
   const lastLoadKey = useRef('');
 
@@ -82,8 +82,8 @@ export default function EarningsPage() {
     return orders.filter((o) => o.order_status === statusFilter);
   }, [orders, statusFilter]);
 
-  // Compute KPIs from filtered orders
-  const kpi = useMemo(() => computeKPI(filteredOrders), [filteredOrders, computeKPI]);
+  // Compute detailed breakdown from filtered orders
+  const d = useMemo(() => computeDetail(filteredOrders), [filteredOrders, computeDetail]);
 
 
   // Get unique statuses from data
@@ -201,35 +201,43 @@ export default function EarningsPage() {
               </thead>
               <tbody>
                 {/* ===== 1. TOTAL PENDAPATAN ===== */}
-                <SectionHeader label="1. Total Pendapatan" value={kpi.totalPendapatan} />
+                <SectionHeader label="1. Total Pendapatan" value={d.totalPendapatan} />
 
                 {/* Subtotal Pesanan */}
-                <SubSectionHeader label="Subtotal Pesanan" value={kpi.totalOriginalPrice} />
-                <DetailRow label="Harga Asli Produk" value={kpi.totalOriginalPrice} indent={2} />
+                <SubSectionHeader label="Subtotal Pesanan" value={d.subtotalPesanan} />
+                <DetailRow label="Harga Asli Produk" value={d.order_original_price || d.order_selling_price} indent={2} />
+                <DetailRow label="Total Diskon Produk" value={-d.seller_discount - d.shopee_discount} indent={2} />
+                <DetailRow label="Jumlah Pengembalian Dana ke Pembeli" value={-d.drc_adjustable_refund - d.seller_return_refund} indent={2} />
 
                 {/* Voucher & Subsidi Shopee */}
-                <SubSectionHeader
-                  label="Voucher & Subsidi Shopee"
-                  value={-(kpi.totalShopeeVoucher + kpi.totalSellerVoucher)}
-                />
-                <DetailRow label="Voucher dari Shopee" value={-kpi.totalShopeeVoucher} indent={2} />
-                <DetailRow label="Voucher disponsori oleh Penjual" value={-kpi.totalSellerVoucher} indent={2} />
+                <SubSectionHeader label="Voucher & Subsidi Shopee" value={-d.totalVoucher} />
+                <DetailRow label="Diskon Produk dari Shopee" value={-d.shopee_discount} indent={2} />
+                <DetailRow label="Voucher disponsori oleh Penjual" value={-d.voucher_from_seller} indent={2} />
+                <DetailRow label="Voucher dari Shopee" value={-d.voucher_from_shopee} indent={2} />
+                <DetailRow label="Cashback Koin disponsori Penjual" value={-d.seller_coin_cash_back} indent={2} />
+                <DetailRow label="Koin yang Digunakan Pembeli" value={-d.coin_used} indent={2} />
 
                 {/* ===== 2. TOTAL PENGELUARAN ===== */}
-                <SectionHeader label="2. Total Pengeluaran" value={-kpi.totalPengeluaran} isExpense />
+                <SectionHeader label="2. Total Pengeluaran" value={-d.totalPengeluaran} isExpense />
 
-                {/* Biaya Pengiriman */}
-                <SubSectionHeader label="Total Biaya Pengiriman" value={-kpi.totalShippingFee} />
-                <DetailRow label="Biaya Pengiriman" value={-kpi.totalShippingFee} indent={2} />
+                {/* Total Biaya Pengiriman */}
+                <SubSectionHeader label="Total Biaya Pengiriman" value={-d.totalBiayaPengiriman} />
+                <DetailRow label="Ongkir Dibayar Pembeli" value={d.buyer_paid_shipping_fee} indent={2} />
+                <DetailRow label="Gratis Ongkir dari Shopee" value={d.shopee_shipping_rebate} indent={2} />
+                <DetailRow label="Diskon Ongkir Ditanggung Jasa Kirim" value={d.shipping_fee_discount_from_3pl} indent={2} />
+                <DetailRow label="Ongkir yang Diteruskan oleh Shopee ke Jasa Kirim" value={-d.actual_shipping_fee} indent={2} />
+                <DetailRow label="Ongkos Kirim Pengembalian Barang" value={-d.reverse_shipping_fee} indent={2} />
 
                 {/* Biaya Admin & Layanan */}
-                <SubSectionHeader
-                  label="Biaya Admin & Layanan"
-                  value={-(kpi.totalCommissionFee + kpi.totalServiceFee + kpi.totalTransactionFee)}
-                />
-                <DetailRow label="Biaya Komisi" value={-kpi.totalCommissionFee} indent={2} />
-                <DetailRow label="Biaya Layanan" value={-kpi.totalServiceFee} indent={2} />
-                <DetailRow label="Biaya Transaksi" value={-kpi.totalTransactionFee} indent={2} />
+                <SubSectionHeader label="Biaya Admin & Layanan" value={-d.totalBiayaAdmin} />
+                <DetailRow label="Biaya Komisi" value={-d.commission_fee} indent={2} />
+                <DetailRow label="Biaya Layanan" value={-d.service_fee} indent={2} />
+                <DetailRow label="Biaya Transaksi" value={-d.seller_transaction_fee} indent={2} />
+                <DetailRow label="Biaya Proses Pesanan" value={-d.seller_order_processing_fee} indent={2} />
+                <DetailRow label="Biaya Kampanye" value={-d.campaign_fee} indent={2} />
+                <DetailRow label="Biaya Administrasi (PPN)" value={-d.escrow_tax} indent={2} />
+                <DetailRow label="Biaya FBS" value={-d.fbs_fee} indent={2} />
+                <DetailRow label="Biaya Isi Saldo Otomatis" value={-d.ads_fee} indent={2} />
 
                 {/* ===== 3. TOTAL YANG DILEPAS ===== */}
                 <tr className="bg-gradient-to-r from-cyan-500/10 to-transparent border-t-2 border-cyan-500/30">
@@ -237,8 +245,8 @@ export default function EarningsPage() {
                     <span className="text-sm font-bold text-cyan-400">3. Total yang Dilepas</span>
                   </td>
                   <td className="py-3.5 px-4 text-right">
-                    <span className={`text-base font-bold ${kpi.totalNet >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>
-                      {formatAmount(kpi.totalNet)}
+                    <span className={`text-base font-bold ${d.totalNet >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>
+                      {formatAmount(d.totalNet)}
                     </span>
                   </td>
                 </tr>
@@ -322,13 +330,13 @@ export default function EarningsPage() {
                   <tr className="border-t-2 border-border bg-white/[0.02]">
                     <td colSpan={3} className="py-3 px-2 text-xs font-semibold">TOTAL</td>
                     <td className="py-3 px-2 text-right text-xs font-bold text-emerald-400">
-                      {formatAmount(kpi.totalPendapatan)}
+                      {formatAmount(d.totalPendapatan)}
                     </td>
                     <td className="py-3 px-2 text-right text-xs font-bold text-red-400">
-                      {formatAmount(-kpi.totalPengeluaran)}
+                      {formatAmount(-d.totalPengeluaran)}
                     </td>
-                    <td className={`py-3 px-2 text-right text-xs font-bold ${kpi.totalNet >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>
-                      {formatAmount(kpi.totalNet)}
+                    <td className={`py-3 px-2 text-right text-xs font-bold ${d.totalNet >= 0 ? 'text-cyan-400' : 'text-red-400'}`}>
+                      {formatAmount(d.totalNet)}
                     </td>
                   </tr>
                 </tfoot>

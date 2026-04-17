@@ -117,6 +117,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 service_fee: escrowData.service_fee || 0,
                 transaction_fee: escrowData.transaction_fee || 0,
                 escrow_amount: escrowData.escrow_amount || 0,
+                escrow_detail: escrowData.raw,
                 escrow_synced: true,
               })
               .eq('order_sn', order.order_sn);
@@ -196,24 +197,62 @@ async function fetchEscrowDetail(
   }
 
   const r = data.response || {};
+  const oi = r.order_income || r;
 
-  // Map Shopee response to our fields
-  // The structure may differ by region; handle both formats
-  const orderIncome = r.order_income || r;
-
-  return {
-    original_price: parseFloat(orderIncome.original_price || orderIncome.order_original_price || 0),
-    seller_voucher: parseFloat(orderIncome.seller_voucher || orderIncome.voucher_from_seller || 0),
-    shopee_voucher: parseFloat(orderIncome.shopee_voucher || orderIncome.voucher_from_shopee || 0),
-    shipping_fee: parseFloat(
-      orderIncome.actual_shipping_fee ||
-      orderIncome.final_shipping_fee ||
-      orderIncome.shipping_fee ||
-      0
-    ),
-    commission_fee: parseFloat(orderIncome.commission_fee || orderIncome.shopee_commission || 0),
-    service_fee: parseFloat(orderIncome.service_fee || 0),
-    transaction_fee: parseFloat(orderIncome.transaction_fee || 0),
-    escrow_amount: parseFloat(r.escrow_amount || orderIncome.escrow_amount || 0),
+  // Parse known summary fields for column storage
+  const parsed = {
+    original_price: pf(oi.original_price || oi.order_original_price || oi.order_selling_price),
+    seller_voucher: pf(oi.seller_voucher || oi.voucher_from_seller),
+    shopee_voucher: pf(oi.shopee_voucher || oi.voucher_from_shopee),
+    shipping_fee: pf(oi.actual_shipping_fee || oi.final_shipping_fee || oi.shipping_fee),
+    commission_fee: pf(oi.commission_fee || oi.shopee_commission),
+    service_fee: pf(oi.service_fee),
+    transaction_fee: pf(oi.seller_transaction_fee || oi.transaction_fee),
+    escrow_amount: pf(r.escrow_amount || oi.escrow_amount),
+    // Store the FULL raw response for granular display on frontend
+    raw: {
+      escrow_amount: pf(r.escrow_amount || oi.escrow_amount),
+      buyer_total_amount: pf(r.buyer_total_amount || oi.buyer_total_amount),
+      // Revenue
+      order_original_price: pf(oi.order_original_price || oi.original_price),
+      order_selling_price: pf(oi.order_selling_price),
+      order_discounted_price: pf(oi.order_discounted_price),
+      seller_discount: pf(oi.seller_discount),
+      shopee_discount: pf(oi.shopee_discount || oi.original_shopee_discount),
+      // Vouchers
+      voucher_from_seller: pf(oi.voucher_from_seller || oi.seller_voucher),
+      voucher_from_shopee: pf(oi.voucher_from_shopee || oi.shopee_voucher),
+      coin_used: pf(oi.coin_used || oi.coins),
+      seller_coin_cash_back: pf(oi.seller_coin_cash_back),
+      // Refund
+      drc_adjustable_refund: pf(oi.drc_adjustable_refund),
+      seller_return_refund: pf(oi.seller_return_refund),
+      // Shipping
+      buyer_paid_shipping_fee: pf(oi.buyer_paid_shipping_fee || oi.shipping_fee),
+      actual_shipping_fee: pf(oi.actual_shipping_fee),
+      final_shipping_fee: pf(oi.final_shipping_fee),
+      shopee_shipping_rebate: pf(oi.shopee_shipping_rebate),
+      shipping_fee_discount_from_3pl: pf(oi.shipping_fee_discount_from_3pl),
+      reverse_shipping_fee: pf(oi.reverse_shipping_fee),
+      // Fees
+      commission_fee: pf(oi.commission_fee || oi.shopee_commission),
+      service_fee: pf(oi.service_fee),
+      seller_transaction_fee: pf(oi.seller_transaction_fee || oi.transaction_fee),
+      campaign_fee: pf(oi.campaign_fee),
+      seller_order_processing_fee: pf(oi.seller_order_processing_fee),
+      escrow_tax: pf(oi.escrow_tax),
+      fbs_fee: pf(oi.fbs_fee),
+      ads_escrow_top_up_fee_or_technical_support_fee: pf(oi.ads_escrow_top_up_fee_or_technical_support_fee),
+      // Protection
+      shipping_seller_protection_fee_amount: pf(oi.shipping_seller_protection_fee_amount),
+      delivery_seller_protection_fee_premium_amount: pf(oi.delivery_seller_protection_fee_premium_amount),
+    },
   };
+
+  return parsed;
+}
+
+function pf(val: any): number {
+  const n = parseFloat(val);
+  return isNaN(n) ? 0 : n;
 }

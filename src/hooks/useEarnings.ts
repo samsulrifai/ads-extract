@@ -1,21 +1,9 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { Order, EarningsKPI, SyncRequest } from '@/types';
+import type { Order, SyncRequest } from '@/types';
 
 const API_BASE = import.meta.env.DEV ? '' : '';
 
-const emptyKPI: EarningsKPI = {
-  totalOriginalPrice: 0,
-  totalSellerVoucher: 0,
-  totalShopeeVoucher: 0,
-  totalPendapatan: 0,
-  totalShippingFee: 0,
-  totalCommissionFee: 0,
-  totalServiceFee: 0,
-  totalTransactionFee: 0,
-  totalPengeluaran: 0,
-  totalNet: 0,
-};
 
 export function useEarnings() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -100,32 +88,106 @@ export function useEarnings() {
     }
   }, []);
 
-  // Compute KPIs from filtered orders
-  const computeKPI = useCallback((filteredOrders: Order[]): EarningsKPI => {
-    if (filteredOrders.length === 0) return emptyKPI;
+  // Aggregate all escrow_detail fields from JSONB
+  const computeDetail = useCallback((filteredOrders: Order[]) => {
+    const sum = (key: string) =>
+      filteredOrders.reduce((acc, o) => {
+        const detail = (o as any).escrow_detail;
+        return acc + (detail?.[key] || 0);
+      }, 0);
 
-    const totalOriginalPrice = filteredOrders.reduce((sum, o) => sum + (o.original_price || 0), 0);
-    const totalSellerVoucher = filteredOrders.reduce((sum, o) => sum + (o.seller_voucher || 0), 0);
-    const totalShopeeVoucher = filteredOrders.reduce((sum, o) => sum + (o.shopee_voucher || 0), 0);
-    const totalShippingFee = filteredOrders.reduce((sum, o) => sum + (o.shipping_fee || 0), 0);
-    const totalCommissionFee = filteredOrders.reduce((sum, o) => sum + (o.commission_fee || 0), 0);
-    const totalServiceFee = filteredOrders.reduce((sum, o) => sum + (o.service_fee || 0), 0);
-    const totalTransactionFee = filteredOrders.reduce((sum, o) => sum + (o.transaction_fee || 0), 0);
+    // 1. Total Pendapatan
+    const order_original_price = sum('order_original_price');
+    const order_selling_price = sum('order_selling_price');
+    const order_discounted_price = sum('order_discounted_price');
+    const seller_discount = sum('seller_discount');
+    const shopee_discount = sum('shopee_discount');
+    const drc_adjustable_refund = sum('drc_adjustable_refund');
+    const seller_return_refund = sum('seller_return_refund');
 
-    const totalPendapatan = totalOriginalPrice + totalShopeeVoucher + totalSellerVoucher;
-    const totalPengeluaran = totalShippingFee + totalCommissionFee + totalServiceFee + totalTransactionFee;
-    const totalNet = totalPendapatan - totalPengeluaran;
+    const voucher_from_shopee = sum('voucher_from_shopee');
+    const voucher_from_seller = sum('voucher_from_seller');
+    const coin_used = sum('coin_used');
+    const seller_coin_cash_back = sum('seller_coin_cash_back');
+
+    const subtotalPesanan = order_original_price || order_selling_price;
+    const totalDiskon = seller_discount + shopee_discount;
+    const totalRefund = drc_adjustable_refund + seller_return_refund;
+    const subtotalNet = subtotalPesanan - totalDiskon - totalRefund;
+
+    const totalVoucher = voucher_from_shopee + voucher_from_seller + coin_used + seller_coin_cash_back;
+    const totalPendapatan = subtotalNet - totalVoucher;
+
+    // 2. Total Pengeluaran
+    const buyer_paid_shipping_fee = sum('buyer_paid_shipping_fee');
+    const actual_shipping_fee = sum('actual_shipping_fee');
+    const final_shipping_fee = sum('final_shipping_fee');
+    const shopee_shipping_rebate = sum('shopee_shipping_rebate');
+    const shipping_fee_discount_from_3pl = sum('shipping_fee_discount_from_3pl');
+    const reverse_shipping_fee = sum('reverse_shipping_fee');
+
+    const totalBiayaPengiriman = 
+      buyer_paid_shipping_fee - actual_shipping_fee + shopee_shipping_rebate +
+      shipping_fee_discount_from_3pl - reverse_shipping_fee;
+
+    const commission_fee = sum('commission_fee');
+    const service_fee = sum('service_fee');
+    const seller_transaction_fee = sum('seller_transaction_fee');
+    const campaign_fee = sum('campaign_fee');
+    const seller_order_processing_fee = sum('seller_order_processing_fee');
+    const escrow_tax = sum('escrow_tax');
+    const fbs_fee = sum('fbs_fee');
+    const ads_fee = sum('ads_escrow_top_up_fee_or_technical_support_fee');
+
+    const totalBiayaAdmin = 
+      commission_fee + service_fee + seller_transaction_fee + 
+      campaign_fee + seller_order_processing_fee + escrow_tax + fbs_fee + ads_fee;
+
+    const totalPengeluaran = totalBiayaPengiriman + totalBiayaAdmin;
+
+    // 3. Total Yang Dilepas
+    const escrow_amount = sum('escrow_amount');
+    const totalNet = escrow_amount || (totalPendapatan - totalPengeluaran);
 
     return {
-      totalOriginalPrice,
-      totalSellerVoucher,
-      totalShopeeVoucher,
+      // Revenue
+      order_original_price,
+      order_selling_price,
+      order_discounted_price,
+      seller_discount,
+      shopee_discount,
+      drc_adjustable_refund,
+      seller_return_refund,
+      subtotalPesanan: subtotalNet,
+      // Vouchers
+      voucher_from_shopee,
+      voucher_from_seller,
+      coin_used,
+      seller_coin_cash_back,
+      totalVoucher,
+      // Totals
       totalPendapatan,
-      totalShippingFee,
-      totalCommissionFee,
-      totalServiceFee,
-      totalTransactionFee,
+      // Shipping
+      buyer_paid_shipping_fee,
+      actual_shipping_fee,
+      final_shipping_fee,
+      shopee_shipping_rebate,
+      shipping_fee_discount_from_3pl,
+      reverse_shipping_fee,
+      totalBiayaPengiriman,
+      // Admin & Fees
+      commission_fee,
+      service_fee,
+      seller_transaction_fee,
+      campaign_fee,
+      seller_order_processing_fee,
+      escrow_tax,
+      fbs_fee,
+      ads_fee,
+      totalBiayaAdmin,
+      // Final
       totalPengeluaran,
+      escrow_amount,
       totalNet,
     };
   }, []);
@@ -138,6 +200,6 @@ export function useEarnings() {
     syncProgress,
     fetchFromDb,
     syncEscrow,
-    computeKPI,
+    computeDetail,
   };
 }
