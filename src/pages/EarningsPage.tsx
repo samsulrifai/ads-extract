@@ -26,7 +26,7 @@ import {
 import DateRangePicker from '@/components/DateRangePicker';
 import { useShops } from '@/hooks/useShops';
 import { useEarnings } from '@/hooks/useEarnings';
-import type { DateRange, Order } from '@/types';
+import type { DateRange } from '@/types';
 
 const formatCurrency = (value: number) => {
   if (value >= 1_000_000) return `Rp ${(value / 1_000_000).toFixed(1)}M`;
