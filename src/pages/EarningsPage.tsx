@@ -331,7 +331,7 @@ export default function EarningsPage() {
                     contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
                     itemStyle={{ fontSize: '12px', fontWeight: 600 }}
                     labelStyle={{ fontSize: '12px', color: '#a1a1aa', marginBottom: '4px' }}
-                    formatter={(value: number) => [`Rp ${formatAmount(value)}`, undefined]}
+                    formatter={(value: any) => [`Rp ${formatAmount(Number(value))}`, undefined]}
                     labelFormatter={(label) => format(new Date(label), 'dd MMM yyyy')}
                   />
                   <Area type="monotone" name="Pendapatan" dataKey="pendapatan" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorPendapatan)" />
