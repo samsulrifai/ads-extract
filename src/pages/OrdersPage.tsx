@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { format, subDays, differenceInDays } from 'date-fns';
+import { useCallback, useEffect, useRef } from 'react';
+import { format, differenceInDays } from 'date-fns';
 import { RefreshCw } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -14,15 +14,24 @@ import OrdersCharts from '@/components/OrdersCharts';
 import OrdersDataTable from '@/components/OrdersDataTable';
 import { useShops } from '@/hooks/useShops';
 import { useOrders } from '@/hooks/useOrders';
-import type { DateRange } from '@/types';
+import { useFilterStore } from '@/hooks/useFilterStore';
 
 export default function OrdersPage() {
-  const [dateRange, setDateRange] = useState<DateRange>({
-    from: subDays(new Date(), 7),
-    to: new Date(),
-  });
+  const { dateRange, setDateRange, shopId, setShopId } = useFilterStore();
 
   const { shops, selectedShop, selectShop } = useShops();
+
+  // Restore shop from stored filter
+  useEffect(() => {
+    if (shopId && shops.length > 0 && selectedShop?.shopee_shop_id !== shopId) {
+      selectShop(shopId);
+    }
+  }, [shopId, shops, selectedShop, selectShop]);
+
+  const handleSelectShop = useCallback((id: number) => {
+    selectShop(id);
+    setShopId(id);
+  }, [selectShop, setShopId]);
 
   const lastSyncKey = useRef('');
 
@@ -80,7 +89,7 @@ export default function OrdersPage() {
             {shops.length > 0 && (
               <Select
                 value={selectedShop?.shopee_shop_id?.toString()}
-                onValueChange={(val) => selectShop(Number(val))}
+                onValueChange={(val) => handleSelectShop(Number(val))}
               >
                 <SelectTrigger className="w-full lg:w-[200px] h-10 bg-secondary/50 border-border">
                   <SelectValue placeholder="Select shop" />

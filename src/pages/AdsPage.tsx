@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { format, subDays, differenceInDays } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 import {
   Eye,
   DollarSign,
@@ -37,7 +37,7 @@ import PerformanceChart from '@/components/PerformanceChart';
 import KPICard from '@/components/KPICard';
 import { useShops } from '@/hooks/useShops';
 import { useAdsData } from '@/hooks/useAdsData';
-import type { DateRange } from '@/types';
+import { useFilterStore } from '@/hooks/useFilterStore';
 
 const formatCurrency = (value: number) => {
   if (value >= 1_000_000) return `Rp ${(value / 1_000_000).toFixed(1)}M`;
@@ -52,15 +52,24 @@ const formatNumber = (value: number) => {
 };
 
 export default function AdsPage() {
-  const [dateRange, setDateRange] = useState<DateRange>({
-    from: subDays(new Date(), 7),
-    to: new Date(),
-  });
+  const { dateRange, setDateRange, shopId, setShopId } = useFilterStore();
   const [adsTypeFilter, setAdsTypeFilter] = useState('all');
   const [showLongRangeWarning, setShowLongRangeWarning] = useState(false);
 
   const { shops, selectedShop, selectShop } = useShops();
   const { data, chartData, kpi, loadingDb, syncing, fetchAdsFromDb, performSync, error } = useAdsData();
+
+  // Restore shop from stored filter
+  useEffect(() => {
+    if (shopId && shops.length > 0 && selectedShop?.shopee_shop_id !== shopId) {
+      selectShop(shopId);
+    }
+  }, [shopId, shops, selectedShop, selectShop]);
+
+  const handleSelectShop = useCallback((id: number) => {
+    selectShop(id);
+    setShopId(id);
+  }, [selectShop, setShopId]);
 
   // Guard to prevent duplicate auto-load calls
   const lastSyncKey = useRef('');
@@ -133,7 +142,7 @@ export default function AdsPage() {
             {shops.length > 0 && (
               <Select
                 value={selectedShop?.shopee_shop_id?.toString()}
-                onValueChange={(val) => selectShop(Number(val))}
+                onValueChange={(val) => handleSelectShop(Number(val))}
               >
                 <SelectTrigger className="w-full lg:w-[200px] h-10 bg-secondary/50 border-border">
                   <SelectValue placeholder="Select shop" />

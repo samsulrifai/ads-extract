@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { format, subDays, differenceInDays } from 'date-fns';
+import { useCallback, useEffect, useRef, useMemo } from 'react';
+import { format, differenceInDays } from 'date-fns';
 import {
   TrendingUp,
   TrendingDown,
@@ -14,6 +14,15 @@ import {
   HandCoins,
   Wallet,
 } from 'lucide-react';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
@@ -25,7 +34,7 @@ import {
 import DateRangePicker from '@/components/DateRangePicker';
 import { useShops } from '@/hooks/useShops';
 import { useEarnings } from '@/hooks/useEarnings';
-import type { DateRange } from '@/types';
+import { useFilterStore } from '@/hooks/useFilterStore';
 
 const formatCurrency = (value: number) => {
   if (Math.abs(value) >= 1_000_000) return `Rp ${(value / 1_000_000).toFixed(1)}M`;
@@ -52,14 +61,22 @@ const ORDER_STATUSES = [
 ];
 
 export default function EarningsPage() {
-  const [dateRange, setDateRange] = useState<DateRange>({
-    from: subDays(new Date(), 7),
-    to: new Date(),
-  });
-  const [statusFilter, setStatusFilter] = useState('all');
+  const { dateRange, setDateRange, statusFilter, setStatusFilter, shopId, setShopId } = useFilterStore();
 
   const { shops, selectedShop, selectShop } = useShops();
   const { orders, loading, syncing, error, syncProgress, fetchFromDb, syncEscrow, computeDetail } = useEarnings();
+
+  // Restore shop from stored filter
+  useEffect(() => {
+    if (shopId && shops.length > 0 && selectedShop?.shopee_shop_id !== shopId) {
+      selectShop(shopId);
+    }
+  }, [shopId, shops, selectedShop, selectShop]);
+
+  const handleSelectShop = useCallback((id: number) => {
+    selectShop(id);
+    setShopId(id);
+  }, [selectShop, setShopId]);
 
   const lastLoadKey = useRef('');
 
@@ -128,7 +145,7 @@ export default function EarningsPage() {
         <CardContent className="p-4">
           <div className="flex flex-col lg:flex-row items-start lg:items-center gap-3">
             {shops.length > 0 && (
-              <Select value={selectedShop?.shopee_shop_id?.toString()} onValueChange={(val) => selectShop(Number(val))}>
+              <Select value={selectedShop?.shopee_shop_id?.toString()} onValueChange={(val) => handleSelectShop(Number(val))}>
                 <SelectTrigger className="w-full lg:w-[200px] h-10 bg-secondary/50 border-border">
                   <SelectValue placeholder="Pilih toko" />
                 </SelectTrigger>
@@ -276,29 +293,51 @@ export default function EarningsPage() {
               Belum ada data. Sync Orders lalu Sync Penghasilan.
             </div>
           ) : (
-            <div className="space-y-2">
-              <div className="flex items-center gap-4 text-xs text-muted-foreground mb-3">
-                <span className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />Pendapatan</span>
-                <span className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-sm bg-red-500" />Pengeluaran</span>
-              </div>
-              <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
-                {chartData.map((c) => {
-                  const max = Math.max(...chartData.map((x) => Math.max(x.pendapatan, x.pengeluaran)), 1);
-                  return (
-                    <div key={c.date} className="flex items-center gap-3">
-                      <span className="text-xs text-muted-foreground w-20 shrink-0">{format(new Date(c.date), 'dd MMM')}</span>
-                      <div className="flex-1 space-y-1">
-                        <div className="h-4 rounded-sm bg-emerald-500/80 flex items-center transition-all duration-500" style={{ width: `${Math.max((c.pendapatan / max) * 100, 2)}%` }}>
-                          <span className="text-[10px] text-white font-medium px-1.5 truncate">{formatCurrency(c.pendapatan)}</span>
-                        </div>
-                        <div className="h-4 rounded-sm bg-red-500/80 flex items-center transition-all duration-500" style={{ width: `${Math.max((c.pengeluaran / max) * 100, 2)}%` }}>
-                          <span className="text-[10px] text-white font-medium px-1.5 truncate">{formatCurrency(c.pengeluaran)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            <div className="h-[300px] mt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorPendapatan" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorPengeluaran" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="oklch(0.25 0.02 260)" />
+                  <XAxis 
+                    dataKey="date" 
+                    tickFormatter={(val) => format(new Date(val), 'dd MMM')} 
+                    stroke="oklch(0.45 0.02 260)"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    minTickGap={20}
+                  />
+                  <YAxis 
+                    stroke="oklch(0.45 0.02 260)"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(val) => {
+                      if (val >= 1000000) return `${(val / 1000000).toFixed(0)}M`;
+                      if (val >= 1000) return `${(val / 1000).toFixed(0)}K`;
+                      return val;
+                    }}
+                  />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '8px' }}
+                    itemStyle={{ fontSize: '12px', fontWeight: 600 }}
+                    labelStyle={{ fontSize: '12px', color: '#a1a1aa', marginBottom: '4px' }}
+                    formatter={(value: number) => [`Rp ${formatAmount(value)}`, undefined]}
+                    labelFormatter={(label) => format(new Date(label), 'dd MMM yyyy')}
+                  />
+                  <Area type="monotone" name="Pendapatan" dataKey="pendapatan" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorPendapatan)" />
+                  <Area type="monotone" name="Pengeluaran" dataKey="pengeluaran" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorPengeluaran)" />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           )}
         </CardContent>
