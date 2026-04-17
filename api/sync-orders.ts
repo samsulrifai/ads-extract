@@ -56,41 +56,67 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ success: true, records: [], records_synced: 0 });
     }
 
-    // 2. Get Order Details (in chunks of 50)
-    const records = [];
-    for (let i = 0; i < orderSns.length; i += 50) {
-      const chunk = orderSns.slice(i, i + 50);
-      const { data, error: detailError } = await fetchOrderDetails(access_token, shopIdNum, chunk);
-      
-      if (detailError) {
-        console.warn(`Detail Error: ${detailError}`);
-        continue;
+    // 2. Get Order Details in parallel batches
+    // Shopee allows max 50 order SNs per detail request
+    // We process 3 chunks in parallel for speed
+    const CHUNK_SIZE = 50;
+    const PARALLEL_CHUNKS = 3;
+    const chunks: string[][] = [];
+    for (let i = 0; i < orderSns.length; i += CHUNK_SIZE) {
+      chunks.push(orderSns.slice(i, i + CHUNK_SIZE));
+    }
+
+    const records: any[] = [];
+
+    for (let i = 0; i < chunks.length; i += PARALLEL_CHUNKS) {
+      const parallelBatch = chunks.slice(i, i + PARALLEL_CHUNKS);
+
+      const results = await Promise.allSettled(
+        parallelBatch.map((chunk) => fetchOrderDetails(access_token, shopIdNum, chunk))
+      );
+
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          console.warn(`Detail batch error: ${result.reason}`);
+          continue;
+        }
+
+        const { data, error: detailError } = result.value;
+        if (detailError) {
+          console.warn(`Detail Error: ${detailError}`);
+          continue;
+        }
+
+        if (data?.response?.order_list) {
+          const transformed = data.response.order_list.map((order: any) => {
+            const items = order.item_list || [];
+            const productNames = items.map((item: any) => item.item_name || '').filter(Boolean).join(', ');
+            const skus = items.map((item: any) => item.model_sku || item.item_sku || '').filter(Boolean).join(', ');
+
+            return {
+              order_sn: order.order_sn,
+              shop_id: shopIdNum,
+              create_time: new Date(order.create_time * 1000).toISOString(),
+              order_status: order.order_status,
+              total_amount: order.total_amount,
+              shipping_carrier: order.shipping_carrier || '-',
+              payment_method: order.payment_method || '-',
+              item_count: items.length,
+              product_name: productNames || '-',
+              sku: skus || '-',
+            };
+          });
+          records.push(...transformed);
+        }
       }
 
-      if (data && data.response && data.response.order_list) {
-        const transformed = data.response.order_list.map((order: any) => {
-          const items = order.item_list || [];
-          const productNames = items.map((item: any) => item.item_name || '').filter(Boolean).join(', ');
-          const skus = items.map((item: any) => item.model_sku || item.item_sku || '').filter(Boolean).join(', ');
-
-          return {
-            order_sn: order.order_sn,
-            shop_id: shopIdNum,
-            create_time: new Date(order.create_time * 1000).toISOString(),
-            order_status: order.order_status,
-            total_amount: order.total_amount,
-            shipping_carrier: order.shipping_carrier || '-',
-            payment_method: order.payment_method || '-',
-            item_count: items.length,
-            product_name: productNames || '-',
-            sku: skus || '-',
-          };
-        });
-        records.push(...transformed);
+      // Small delay between parallel batches
+      if (i + PARALLEL_CHUNKS < chunks.length) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
     }
 
-    // Save to Supabase using Admin API to bypass RLS
+    // 3. Save to Supabase in batches of 100
     if (records.length > 0) {
       const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
       if (!supabaseUrl || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -101,14 +127,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const supabaseAdmin = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-      const { error: dbError } = await supabaseAdmin
-        .from('orders')
-        .upsert(records, { onConflict: 'order_sn' });
+      const DB_BATCH = 100;
+      for (let i = 0; i < records.length; i += DB_BATCH) {
+        const batch = records.slice(i, i + DB_BATCH);
+        const { error: dbError } = await supabaseAdmin
+          .from('orders')
+          .upsert(batch, { onConflict: 'order_sn' });
 
-      if (dbError) {
-        console.error('Failed to save orders to database:', dbError);
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        return res.status(500).json({ success: false, error: `Database Save Error: ${dbError.message || JSON.stringify(dbError)}` });
+        if (dbError) {
+          console.error('Failed to save orders batch to database:', dbError);
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          return res.status(500).json({ success: false, error: `Database Save Error: ${dbError.message || JSON.stringify(dbError)}` });
+        }
       }
     }
 
