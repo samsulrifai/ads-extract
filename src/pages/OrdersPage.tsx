@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/select';
 import DateRangePicker from '@/components/DateRangePicker';
 import OrdersCharts from '@/components/OrdersCharts';
+import ReturPerSKU from '@/components/ReturPerSKU';
 import OrdersDataTable from '@/components/OrdersDataTable';
 import { useShops } from '@/hooks/useShops';
 import { useOrders } from '@/hooks/useOrders';
@@ -142,6 +143,9 @@ export default function OrdersPage() {
 
       {/* Pie Charts */}
       <OrdersCharts orders={orders} />
+
+      {/* Retur per SKU */}
+      <ReturPerSKU orders={orders} />
 
       {/* Orders Table */}
       <OrdersDataTable orders={orders} loading={syncing || loadingDb} />
