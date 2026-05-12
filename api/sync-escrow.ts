@@ -61,8 +61,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .from('orders')
       .select('order_sn')
       .eq('shop_id', shopIdNum)
-      .gte('create_time', `${start_date}T00:00:00`)
-      .lte('create_time', `${end_date}T23:59:59`)
+      .gte('create_time', new Date(start_date + 'T00:00:00+07:00').toISOString())
+      .lte('create_time', new Date(end_date + 'T23:59:59+07:00').toISOString())
       .or('escrow_synced.is.null,escrow_synced.eq.false,escrow_detail.is.null');
 
     if (dbError) {
@@ -76,8 +76,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .from('orders')
         .select('*')
         .eq('shop_id', shopIdNum)
-        .gte('create_time', `${start_date}T00:00:00`)
-        .lte('create_time', `${end_date}T23:59:59`)
+        .gte('create_time', new Date(start_date + 'T00:00:00+07:00').toISOString())
+        .lte('create_time', new Date(end_date + 'T23:59:59+07:00').toISOString())
         .order('create_time', { ascending: false });
 
       res.setHeader('Access-Control-Allow-Origin', '*');
@@ -150,8 +150,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .from('orders')
       .select('*')
       .eq('shop_id', shopIdNum)
-      .gte('create_time', `${start_date}T00:00:00`)
-      .lte('create_time', `${end_date}T23:59:59`)
+      .gte('create_time', new Date(start_date + 'T00:00:00+07:00').toISOString())
+      .lte('create_time', new Date(end_date + 'T23:59:59+07:00').toISOString())
       .order('create_time', { ascending: false });
 
     res.setHeader('Access-Control-Allow-Origin', '*');

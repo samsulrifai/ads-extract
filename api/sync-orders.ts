@@ -41,8 +41,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const startTime = Math.floor(new Date(start_date + 'T00:00:00').getTime() / 1000);
-    const endTime = Math.floor(new Date(end_date + 'T23:59:59').getTime() / 1000);
+    const startTime = Math.floor(new Date(start_date + 'T00:00:00+07:00').getTime() / 1000);
+    const endTime = Math.floor(new Date(end_date + 'T23:59:59+07:00').getTime() / 1000);
 
     // 1. Get Order SN List
     const { orderSns, error: listError } = await fetchOrderList(access_token, shopIdNum, startTime, endTime);
