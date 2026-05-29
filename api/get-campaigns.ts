@@ -1,13 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { PARTNER_ID, API_HOST, generateSign } from './_lib/shopee.js';
-import { getShopToken } from './_lib/get-shop-token.js';
+import { createClient } from '@supabase/supabase-js';
 
 /**
  * POST /api/get-campaigns
- * Fetch all ads/campaigns from Shopee Ads API.
- * Token is fetched server-side from Supabase.
+ * Fetch campaign performance summary from Supabase ads_performance table.
+ * Groups data by ads_type to show performance per campaign type.
  *
- * Body: { shop_id: number }
+ * Body: { shop_id: number, start_date?: string, end_date?: string }
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
@@ -24,94 +23,126 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { shop_id } = req.body;
+    const { shop_id, start_date, end_date } = req.body;
 
     if (!shop_id) {
       res.setHeader('Access-Control-Allow-Origin', '*');
       return res.status(400).json({ success: false, error: 'Missing shop_id' });
     }
 
-    const shopIdNum = Number(shop_id);
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-    // Get valid token from Supabase (auto-refreshes if expired)
-    const { access_token, error: tokenError } = await getShopToken(shopIdNum);
-    if (tokenError || !access_token) {
+    if (!supabaseUrl || !supabaseServiceKey) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      return res.status(500).json({ success: false, error: 'Missing Supabase credentials' });
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Query ads_performance grouped by ads_type
+    let query = supabase
+      .from('ads_performance')
+      .select('*')
+      .eq('shop_id', Number(shop_id))
+      .order('date', { ascending: false });
+
+    if (start_date) {
+      query = query.gte('date', start_date);
+    }
+    if (end_date) {
+      query = query.lte('date', end_date);
+    }
+
+    const { data, error: dbError } = await query;
+
+    if (dbError) {
       res.setHeader('Access-Control-Allow-Origin', '*');
       return res.status(200).json({
         success: false,
         campaigns: [],
-        error: tokenError || 'No valid token found for this shop.',
+        error: `Database error: ${dbError.message}`,
       });
     }
 
-    // Fetch all campaigns (paginated)
-    const allCampaigns: any[] = [];
-    let page = 0;
-    let hasMore = true;
-
-    while (hasMore) {
-      const apiPath = '/api/v2/ads/get_all_ads';
-      const timestamp = Math.floor(Date.now() / 1000);
-      const sign = generateSign(apiPath, timestamp, access_token, shopIdNum);
-
-      const queryParams = new URLSearchParams({
-        partner_id: String(PARTNER_ID),
-        timestamp: String(timestamp),
-        sign,
-        access_token,
-        shop_id: String(shopIdNum),
-        page: String(page),
-        page_size: '50',
+    if (!data || data.length === 0) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      return res.status(200).json({
+        success: true,
+        campaigns: [],
+        total: 0,
       });
+    }
 
-      const url = `${API_HOST}${apiPath}?${queryParams.toString()}`;
-      const response = await fetch(url);
-      const data = await response.json();
+    // Aggregate by ads_type
+    const typeMap = new Map<string, {
+      ads_type: string;
+      impressions: number;
+      clicks: number;
+      spend: number;
+      orders: number;
+      gmv: number;
+      days: number;
+      latest_date: string;
+      earliest_date: string;
+    }>();
 
-      if (data.error && data.error !== '') {
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        return res.status(200).json({
-          success: false,
-          campaigns: [],
-          error: `Shopee API: ${data.error}${data.message ? ' - ' + data.message : ''}`,
-        });
+    for (const row of data) {
+      const type = row.ads_type || 'unknown';
+      const existing = typeMap.get(type) || {
+        ads_type: type,
+        impressions: 0,
+        clicks: 0,
+        spend: 0,
+        orders: 0,
+        gmv: 0,
+        days: 0,
+        latest_date: '',
+        earliest_date: '',
+      };
+
+      existing.impressions += row.impressions || 0;
+      existing.clicks += row.clicks || 0;
+      existing.spend += Number(row.spend) || 0;
+      existing.orders += row.orders || 0;
+      existing.gmv += Number(row.gmv) || 0;
+      existing.days += 1;
+
+      if (!existing.latest_date || row.date > existing.latest_date) {
+        existing.latest_date = row.date;
+      }
+      if (!existing.earliest_date || row.date < existing.earliest_date) {
+        existing.earliest_date = row.date;
       }
 
-      const rawList = data.response?.ads_list || data.response?.entry_list || [];
-      allCampaigns.push(...rawList);
-
-      hasMore = rawList.length >= 50;
-      page++;
-
-      // Safety limit
-      if (page > 10) break;
+      typeMap.set(type, existing);
     }
 
-    // Transform campaigns
-    const campaigns = allCampaigns.map((item: any) => {
-      const impressions = item.impression || item.impressions || 0;
-      const clicks = item.click || item.clicks || 0;
-      const spend = item.expense || item.cost || item.spend || 0;
-      const gmv = item.direct_gmv || item.gmv || item.broad_gmv || 0;
+    // Build campaign list
+    const campaigns = [...typeMap.values()].map((item) => {
+      const ctr = item.impressions > 0 ? (item.clicks / item.impressions) * 100 : 0;
+      const roas = item.spend > 0 ? item.gmv / item.spend : 0;
+      const avgDailySpend = item.days > 0 ? item.spend / item.days : 0;
 
       return {
-        campaign_id: item.campaign_id || item.campaignid || item.id || 0,
-        campaign_name: item.campaign_name || item.title || `Campaign ${item.campaign_id || 'Unknown'}`,
-        campaign_type: item.campaign_type ?? item.type ?? 0,
-        status: item.state || item.status || 'unknown',
-        daily_budget: item.daily_budget || 0,
-        total_budget: item.total_budget || 0,
-        start_time: item.start_time || 0,
-        end_time: item.end_time || 0,
-        impressions,
-        clicks,
-        spend,
-        orders: item.direct_order || item.orders || item.broad_order || 0,
-        gmv,
-        ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
-        roas: spend > 0 ? gmv / spend : 0,
+        campaign_id: item.ads_type,
+        campaign_name: formatCampaignName(item.ads_type),
+        campaign_type: item.ads_type,
+        status: 'ongoing',
+        daily_budget: avgDailySpend,
+        total_budget: item.spend,
+        impressions: item.impressions,
+        clicks: item.clicks,
+        spend: item.spend,
+        orders: item.orders,
+        gmv: item.gmv,
+        ctr,
+        roas,
+        days: item.days,
+        latest_date: item.latest_date,
+        earliest_date: item.earliest_date,
       };
-    });
+    }).sort((a, b) => b.spend - a.spend);
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(200).json({
@@ -126,4 +157,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       error: error.message,
     });
   }
+}
+
+function formatCampaignName(adsType: string): string {
+  const nameMap: Record<string, string> = {
+    search: 'Search Ads (Iklan Pencarian)',
+    discovery: 'Discovery Ads (Iklan Produk Serupa)',
+    video: 'Video Ads (Iklan Video)',
+    cpc: 'CPC Ads',
+    cpa: 'CPA Ads',
+  };
+  return nameMap[adsType] || `${adsType.charAt(0).toUpperCase()}${adsType.slice(1)} Ads`;
 }

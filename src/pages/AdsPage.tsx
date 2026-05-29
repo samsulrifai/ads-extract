@@ -98,7 +98,11 @@ export default function AdsPage() {
     });
 
     // Also load campaigns
-    fetchCampaigns(selectedShop.shopee_shop_id);
+    fetchCampaigns({
+      shop_id: selectedShop.shopee_shop_id,
+      start_date: format(dateRange.from, 'yyyy-MM-dd'),
+      end_date: format(dateRange.to, 'yyyy-MM-dd'),
+    });
   }, [selectedShop, dateRange, fetchAdsFromDb, fetchCampaigns]);
 
   const handleSync = useCallback(async () => {
@@ -290,7 +294,11 @@ export default function AdsPage() {
                 {campaigns.length} campaigns
               </span>
               <button
-                onClick={() => selectedShop && fetchCampaigns(selectedShop.shopee_shop_id)}
+                onClick={() => selectedShop && dateRange.from && dateRange.to && fetchCampaigns({
+                  shop_id: selectedShop.shopee_shop_id,
+                  start_date: format(dateRange.from, 'yyyy-MM-dd'),
+                  end_date: format(dateRange.to, 'yyyy-MM-dd'),
+                })}
                 disabled={campaignsLoading || !selectedShop}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-secondary/50 hover:bg-secondary text-foreground disabled:opacity-50 transition-all border border-border"
               >

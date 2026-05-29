@@ -9,7 +9,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { Campaign } from '@/hooks/useCampaigns';
-import { getCampaignTypeLabel } from '@/hooks/useCampaigns';
 
 interface CampaignTableProps {
   campaigns: Campaign[];
@@ -28,26 +27,19 @@ const formatNumber = (value: number) => {
   return value.toLocaleString('id-ID');
 };
 
-const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
-  ongoing: { label: 'Active', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/30' },
-  normal: { label: 'Active', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/30' },
-  paused: { label: 'Paused', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/30' },
-  ended: { label: 'Ended', color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/30' },
-  schedule: { label: 'Scheduled', color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/30' },
-  unknown: { label: 'Unknown', color: 'text-muted-foreground', bg: 'bg-secondary border-border' },
-};
-
-const typeConfig: Record<number, { color: string; bg: string }> = {
-  0: { color: 'text-chart-1', bg: 'bg-chart-1/15 border-chart-1/30' },
-  1: { color: 'text-chart-2', bg: 'bg-chart-2/15 border-chart-2/30' },
-  2: { color: 'text-chart-3', bg: 'bg-chart-3/15 border-chart-3/30' },
+const typeConfig: Record<string, { label: string; color: string; bg: string }> = {
+  search:    { label: '🔍 Search', color: 'text-chart-1', bg: 'bg-chart-1/15 border-chart-1/30' },
+  discovery: { label: '🎯 Discovery', color: 'text-chart-2', bg: 'bg-chart-2/15 border-chart-2/30' },
+  video:     { label: '🎬 Video', color: 'text-chart-3', bg: 'bg-chart-3/15 border-chart-3/30' },
+  cpc:       { label: '💰 CPC', color: 'text-amber-400', bg: 'bg-amber-500/15 border-amber-500/30' },
+  cpa:       { label: '📊 CPA', color: 'text-violet-400', bg: 'bg-violet-500/15 border-violet-500/30' },
 };
 
 export default function CampaignTable({ campaigns, loading }: CampaignTableProps) {
   if (loading) {
     return (
       <div className="space-y-3">
-        {Array.from({ length: 5 }).map((_, i) => (
+        {Array.from({ length: 3 }).map((_, i) => (
           <Skeleton key={i} className="h-14 w-full rounded-lg" />
         ))}
       </div>
@@ -62,21 +54,13 @@ export default function CampaignTable({ campaigns, loading }: CampaignTableProps
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
           </svg>
         </div>
-        <h3 className="text-sm font-semibold text-foreground mb-1">No campaigns found</h3>
+        <h3 className="text-sm font-semibold text-foreground mb-1">No campaign data</h3>
         <p className="text-xs text-muted-foreground max-w-xs">
-          Klik "Load Campaigns" untuk mengambil daftar campaign dari Shopee Ads.
+          Sync data iklan terlebih dahulu untuk melihat performa campaign.
         </p>
       </div>
     );
   }
-
-  // Sort: active first, then by spend desc
-  const sorted = [...campaigns].sort((a, b) => {
-    const statusOrder = (s: string) => s === 'ongoing' || s === 'normal' ? 0 : s === 'paused' ? 1 : 2;
-    const diff = statusOrder(a.status) - statusOrder(b.status);
-    if (diff !== 0) return diff;
-    return b.spend - a.spend;
-  });
 
   return (
     <div className="rounded-xl border border-border overflow-hidden">
@@ -85,48 +69,39 @@ export default function CampaignTable({ campaigns, loading }: CampaignTableProps
           <TableRow className="bg-secondary/30 hover:bg-secondary/30">
             <TableHead className="text-xs font-semibold text-muted-foreground">Campaign</TableHead>
             <TableHead className="text-xs font-semibold text-muted-foreground">Type</TableHead>
-            <TableHead className="text-xs font-semibold text-muted-foreground">Status</TableHead>
-            <TableHead className="text-xs font-semibold text-muted-foreground text-right">Budget/Day</TableHead>
+            <TableHead className="text-xs font-semibold text-muted-foreground text-right">Days</TableHead>
             <TableHead className="text-xs font-semibold text-muted-foreground text-right">Impressions</TableHead>
             <TableHead className="text-xs font-semibold text-muted-foreground text-right">Clicks</TableHead>
             <TableHead className="text-xs font-semibold text-muted-foreground text-right">CTR</TableHead>
             <TableHead className="text-xs font-semibold text-muted-foreground text-right">Spend</TableHead>
+            <TableHead className="text-xs font-semibold text-muted-foreground text-right">Avg/Day</TableHead>
             <TableHead className="text-xs font-semibold text-muted-foreground text-right">Orders</TableHead>
             <TableHead className="text-xs font-semibold text-muted-foreground text-right">GMV</TableHead>
             <TableHead className="text-xs font-semibold text-muted-foreground text-right">ROAS</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sorted.map((campaign, index) => {
-            const status = statusConfig[campaign.status] || statusConfig.unknown;
-            const type = typeConfig[campaign.campaign_type] || typeConfig[0];
+          {campaigns.map((campaign, index) => {
+            const type = typeConfig[campaign.campaign_type] || { label: campaign.campaign_type, color: 'text-muted-foreground', bg: 'bg-secondary border-border' };
 
             return (
               <TableRow
                 key={campaign.campaign_id || index}
                 className="hover:bg-secondary/20 transition-colors duration-150"
               >
-                <TableCell className="max-w-[200px]">
-                  <div className="truncate text-sm font-medium" title={campaign.campaign_name}>
-                    {campaign.campaign_name}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground font-mono">
-                    ID: {campaign.campaign_id}
+                <TableCell className="max-w-[220px]">
+                  <div className="text-sm font-medium">{campaign.campaign_name}</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {campaign.earliest_date} → {campaign.latest_date}
                   </div>
                 </TableCell>
                 <TableCell>
                   <Badge variant="outline" className={`text-[11px] ${type.color} ${type.bg}`}>
-                    {getCampaignTypeLabel(campaign.campaign_type)}
+                    {type.label}
                   </Badge>
                 </TableCell>
-                <TableCell>
-                  <Badge variant="outline" className={`text-[11px] ${status.color} ${status.bg}`}>
-                    <div className={`h-1.5 w-1.5 rounded-full mr-1.5 ${campaign.status === 'ongoing' || campaign.status === 'normal' ? 'bg-emerald-400 animate-pulse' : campaign.status === 'paused' ? 'bg-amber-400' : 'bg-red-400'}`} />
-                    {status.label}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right text-sm tabular-nums">
-                  {campaign.daily_budget > 0 ? formatCurrency(campaign.daily_budget) : '–'}
+                <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                  {campaign.days}
                 </TableCell>
                 <TableCell className="text-right text-sm tabular-nums">
                   {formatNumber(campaign.impressions)}
@@ -139,6 +114,9 @@ export default function CampaignTable({ campaigns, loading }: CampaignTableProps
                 </TableCell>
                 <TableCell className="text-right text-sm tabular-nums">
                   {formatCurrency(campaign.spend)}
+                </TableCell>
+                <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
+                  {formatCurrency(campaign.daily_budget)}
                 </TableCell>
                 <TableCell className="text-right text-sm tabular-nums">
                   {formatNumber(campaign.orders)}
