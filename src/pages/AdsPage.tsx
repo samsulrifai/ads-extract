@@ -34,7 +34,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import DateRangePicker from '@/components/DateRangePicker';
 import SyncButton from '@/components/SyncButton';
-import AdsDataTable from '@/components/AdsDataTable';
 import PerformanceChart from '@/components/PerformanceChart';
 import KPICard from '@/components/KPICard';
 import CampaignTable from '@/components/CampaignTable';
@@ -61,7 +60,7 @@ export default function AdsPage() {
   const [showLongRangeWarning, setShowLongRangeWarning] = useState(false);
 
   const { shops, selectedShop, selectShop } = useShops();
-  const { data, chartData, kpi, loadingDb, syncing, fetchAdsFromDb, performSync, error } = useAdsData();
+  const { chartData, kpi, loadingDb, syncing, fetchAdsFromDb, performSync, error } = useAdsData();
   const { campaigns, loading: campaignsLoading, error: campaignsError, fetchCampaigns } = useCampaigns();
 
   // Restore shop from stored filter

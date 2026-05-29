@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useMemo } from 'react';
-import { format, differenceInDays, formatDistanceToNow } from 'date-fns';
-import { id as idLocale } from 'date-fns/locale';
+import { format, differenceInDays } from 'date-fns';
 import {
   TrendingUp,
   TrendingDown,
@@ -19,9 +18,7 @@ import {
   MousePointerClick,
   Target,
   AlertTriangle,
-  CheckCircle2,
   Clock,
-  ShieldAlert,
   Link2Off,
   Package,
 } from 'lucide-react';
@@ -37,8 +34,7 @@ import {
   Pie,
   Cell,
   Legend,
-  BarChart,
-  Bar,
+
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
