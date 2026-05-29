@@ -19,8 +19,8 @@ import { useAuth } from '@/contexts/AuthContext';
 
 const commonNavItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/ads', icon: Megaphone, label: 'Ads' },
-  { to: '/earnings', icon: Wallet, label: 'Penghasilan' },
+  { to: '/ads', icon: Megaphone, label: 'Ads Performance' },
+  { to: '/earnings', icon: Wallet, label: 'Earnings' },
   { to: '/orders', icon: ShoppingBag, label: 'Orders' },
   { to: '/shops', icon: Store, label: 'Shops' },
 ];
@@ -70,7 +70,7 @@ export default function Layout() {
               Antigravity
             </h1>
             <p className="text-[11px] text-muted-foreground -mt-0.5">
-              Shopee Ads Extractor
+              Multi-Platform Ads Manager
             </p>
           </div>
           <Button

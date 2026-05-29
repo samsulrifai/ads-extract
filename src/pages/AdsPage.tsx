@@ -11,6 +11,8 @@ import {
   MousePointerClick,
   Percent,
   Package,
+  Megaphone,
+  RefreshCw,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -35,9 +37,11 @@ import SyncButton from '@/components/SyncButton';
 import AdsDataTable from '@/components/AdsDataTable';
 import PerformanceChart from '@/components/PerformanceChart';
 import KPICard from '@/components/KPICard';
+import CampaignTable from '@/components/CampaignTable';
 import { useShops } from '@/hooks/useShops';
 import { useAdsData } from '@/hooks/useAdsData';
 import { useFilterStore } from '@/hooks/useFilterStore';
+import { useCampaigns } from '@/hooks/useCampaigns';
 
 const formatCurrency = (value: number) => {
   if (value >= 1_000_000) return `Rp ${(value / 1_000_000).toFixed(1)}M`;
@@ -58,6 +62,7 @@ export default function AdsPage() {
 
   const { shops, selectedShop, selectShop } = useShops();
   const { data, chartData, kpi, loadingDb, syncing, fetchAdsFromDb, performSync, error } = useAdsData();
+  const { campaigns, loading: campaignsLoading, error: campaignsError, fetchCampaigns } = useCampaigns();
 
   // Restore shop from stored filter
   useEffect(() => {
@@ -92,7 +97,10 @@ export default function AdsPage() {
       start_date: format(dateRange.from, 'yyyy-MM-dd'),
       end_date: format(dateRange.to, 'yyyy-MM-dd'),
     });
-  }, [selectedShop, dateRange, fetchAdsFromDb]);
+
+    // Also load campaigns
+    fetchCampaigns(selectedShop.shopee_shop_id);
+  }, [selectedShop, dateRange, fetchAdsFromDb, fetchCampaigns]);
 
   const handleSync = useCallback(async () => {
     if (!selectedShop || !dateRange.from || !dateRange.to) return;
@@ -270,21 +278,36 @@ export default function AdsPage() {
         </CardContent>
       </Card>
 
-      {/* Data Table */}
+      {/* Campaign List */}
       <Card className="glass-card">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <Target className="h-4 w-4 text-primary" />
-              Daily Breakdown
+              <Megaphone className="h-4 w-4 text-primary" />
+              Active Campaigns
             </CardTitle>
-            <span className="text-xs text-muted-foreground">
-              {data.length} records
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">
+                {campaigns.length} campaigns
+              </span>
+              <button
+                onClick={() => selectedShop && fetchCampaigns(selectedShop.shopee_shop_id)}
+                disabled={campaignsLoading || !selectedShop}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-secondary/50 hover:bg-secondary text-foreground disabled:opacity-50 transition-all border border-border"
+              >
+                <RefreshCw className={`h-3 w-3 ${campaignsLoading ? 'animate-spin' : ''}`} />
+                {campaignsLoading ? 'Loading...' : 'Refresh'}
+              </button>
+            </div>
           </div>
+          {campaignsError && (
+            <div className="mt-2 px-3 py-2 rounded-lg text-xs bg-destructive/10 text-destructive border border-destructive/20">
+              {campaignsError}
+            </div>
+          )}
         </CardHeader>
         <CardContent>
-          <AdsDataTable data={data} loading={loadingDb || syncing} />
+          <CampaignTable campaigns={campaigns} loading={campaignsLoading} />
         </CardContent>
       </Card>
 
