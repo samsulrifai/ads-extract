@@ -40,11 +40,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Get valid token
     const { access_token, error: tokenError } = await getShopToken(shopIdNum);
     if (tokenError || !access_token) {
+      const needsReauth = tokenError?.includes('re-authorize') || tokenError?.includes('invalid_access_token');
       res.setHeader('Access-Control-Allow-Origin', '*');
       return res.status(200).json({
         success: false,
         synced: 0,
         error: tokenError || 'No valid token found.',
+        needs_reauth: needsReauth,
       });
     }
 
