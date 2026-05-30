@@ -60,7 +60,8 @@ export async function getShopToken(
   const reason = forceRefresh ? 'force refresh (token rejected by Shopee)' : 'token expired';
   console.log(`[getShopToken] Refreshing token for shop ${shopId}: ${reason}`);
 
-  const refreshResult = await refreshAccessToken(shopId, shop.refresh_token, supabase);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const refreshResult = await refreshAccessToken(shopId, shop.refresh_token, supabase as any);
 
   if (refreshResult.access_token) {
     return { access_token: refreshResult.access_token };
@@ -99,7 +100,8 @@ export async function getShopToken(
   // DB token is also expired, and it's a different refresh_token — try once more
   if (freshShop.refresh_token && freshShop.refresh_token !== shop.refresh_token) {
     console.log(`[getShopToken] Found a new refresh_token in DB for shop ${shopId}, retrying refresh...`);
-    const retryResult = await refreshAccessToken(shopId, freshShop.refresh_token, supabase);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const retryResult = await refreshAccessToken(shopId, freshShop.refresh_token, supabase as any);
     if (retryResult.access_token) {
       return { access_token: retryResult.access_token };
     }
@@ -134,7 +136,7 @@ export function isTokenError(shopeeError: string | undefined | null): boolean {
 async function refreshAccessToken(
   shopId: number,
   refreshToken: string,
-  supabase: ReturnType<typeof createClient>
+  supabase: any
 ): Promise<{ access_token: string; error?: string }> {
   try {
     const apiPath = '/api/v2/auth/access_token/get';
