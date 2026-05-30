@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { PARTNER_ID, API_HOST, generateSign } from './_lib/shopee.js';
-import { getShopToken } from './_lib/get-shop-token.js';
+import { getShopToken, isTokenError } from './_lib/get-shop-token.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
@@ -31,7 +31,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const shopIdNum = Number(shop_id);
 
     // Get valid token from Supabase (auto-refreshes if expired)
-    const { access_token, error: tokenError } = await getShopToken(shopIdNum);
+    let { access_token, error: tokenError } = await getShopToken(shopIdNum);
     if (tokenError || !access_token) {
       const needsReauth = tokenError?.includes('re-authorize') || tokenError?.includes('invalid_access_token');
       res.setHeader('Access-Control-Allow-Origin', '*');
@@ -47,11 +47,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const endTime = Math.floor(new Date(end_date + 'T23:59:59+07:00').getTime() / 1000);
 
     // 1. Get Order SN List
-    const { orderSns, error: listError } = await fetchOrderList(access_token, shopIdNum, startTime, endTime);
+    let { orderSns, error: listError } = await fetchOrderList(access_token, shopIdNum, startTime, endTime);
+
+    // If token was rejected by Shopee, force refresh and retry once
+    if (listError && isTokenError(listError)) {
+      console.log(`[sync-orders] Token rejected by Shopee for shop ${shopIdNum}, force refreshing...`);
+      const { access_token: freshToken, error: refreshError } = await getShopToken(shopIdNum, { forceRefresh: true });
+
+      if (refreshError || !freshToken) {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        return res.status(200).json({
+          success: false,
+          records_synced: 0,
+          error: refreshError || 'Token refresh failed.',
+          needs_reauth: true,
+        });
+      }
+
+      access_token = freshToken;
+      const retryResult = await fetchOrderList(access_token, shopIdNum, startTime, endTime);
+      orderSns = retryResult.orderSns;
+      listError = retryResult.error;
+    }
+
     if (listError) {
       res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.status(200).json({ success: false, records_synced: 0, error: `Get Order List: ${listError}` });
+      return res.status(200).json({ success: false, records_synced: 0, error: `Get Order List: ${listError}`, needs_reauth: isTokenError(listError) });
     }
+
 
     if (orderSns.length === 0) {
       res.setHeader('Access-Control-Allow-Origin', '*');

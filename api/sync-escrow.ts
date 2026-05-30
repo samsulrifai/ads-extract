@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { PARTNER_ID, API_HOST, generateSign } from './_lib/shopee.js';
-import { getShopToken } from './_lib/get-shop-token.js';
+import { getShopToken, isTokenError } from './_lib/get-shop-token.js';
 
 /**
  * POST /api/sync-escrow
@@ -9,6 +9,7 @@ import { getShopToken } from './_lib/get-shop-token.js';
  * Body: { shop_id, start_date, end_date }
  *
  * Calls /api/v2/payment/get_escrow_detail per order to get financial breakdown.
+ * Auto-retries with force token refresh if Shopee rejects the token.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
@@ -38,7 +39,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const shopIdNum = Number(shop_id);
 
     // Get valid token
-    const { access_token, error: tokenError } = await getShopToken(shopIdNum);
+    let { access_token, error: tokenError } = await getShopToken(shopIdNum);
     if (tokenError || !access_token) {
       const needsReauth = tokenError?.includes('re-authorize') || tokenError?.includes('invalid_access_token');
       res.setHeader('Access-Control-Allow-Origin', '*');
@@ -99,6 +100,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let synced = 0;
     const errors: string[] = [];
     const BATCH_SIZE = 5;
+    let tokenRefreshed = false;
 
     for (let i = 0; i < ordersToSync.length; i += BATCH_SIZE) {
       const batch = ordersToSync.slice(i, i + BATCH_SIZE);
@@ -107,7 +109,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         batch.map(async (order) => {
           const escrowData = await fetchEscrowDetail(access_token, shopIdNum, order.order_sn);
 
-          if (escrowData) {
+          if (escrowData && escrowData.tokenError) {
+            throw new Error('TOKEN_ERROR');
+          }
+
+          if (escrowData && !escrowData.tokenError) {
             const { error: updateError } = await supabaseAdmin
               .from('orders')
               .update({
@@ -133,10 +139,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         })
       );
 
+      // Check if any result has a token error — force refresh and retry this batch
+      const hasTokenError = results.some(
+        (r) => r.status === 'rejected' && r.reason?.message === 'TOKEN_ERROR'
+      );
+
+      if (hasTokenError && !tokenRefreshed) {
+        console.log(`[sync-escrow] Token rejected by Shopee for shop ${shopIdNum}, force refreshing...`);
+        const { access_token: freshToken, error: refreshError } = await getShopToken(shopIdNum, { forceRefresh: true });
+
+        if (!refreshError && freshToken) {
+          access_token = freshToken;
+          tokenRefreshed = true;
+          // Retry this batch with fresh token
+          i -= BATCH_SIZE;
+          continue;
+        } else {
+          errors.push(`Token refresh failed: ${refreshError}`);
+          break;
+        }
+      }
+
       results.forEach((result) => {
         if (result.status === 'fulfilled' && result.value) {
           synced++;
-        } else if (result.status === 'rejected') {
+        } else if (result.status === 'rejected' && result.reason?.message !== 'TOKEN_ERROR') {
           errors.push(result.reason?.message || 'Unknown error');
         }
       });
@@ -195,6 +222,9 @@ async function fetchEscrowDetail(
 
   if (data.error && data.error !== '') {
     console.warn(`Escrow error for ${orderSn}: ${data.error} - ${data.message || ''}`);
+    if (isTokenError(data.error)) {
+      return { tokenError: true };
+    }
     return null;
   }
 

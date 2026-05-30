@@ -1,6 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { PARTNER_ID, API_HOST, generateSign } from './shopee.js';
 
+interface GetShopTokenOptions {
+  /** Force refresh even if the token hasn't expired according to DB */
+  forceRefresh?: boolean;
+}
+
 /**
  * Get a valid access_token for a shop from Supabase.
  * Auto-refreshes if the token is expired.
@@ -8,8 +13,16 @@ import { PARTNER_ID, API_HOST, generateSign } from './shopee.js';
  * Handles race conditions: if two requests try to refresh simultaneously,
  * the second one will re-read from DB after a failed refresh attempt
  * (since the first request may have already saved a new token).
+ *
+ * @param forceRefresh - Force refresh even if token looks valid in DB.
+ *   Use this when Shopee API rejects a token that hasn't expired yet.
  */
-export async function getShopToken(shopId: number): Promise<{ access_token: string; error?: string }> {
+export async function getShopToken(
+  shopId: number,
+  options: GetShopTokenOptions = {}
+): Promise<{ access_token: string; error?: string }> {
+  const { forceRefresh = false } = options;
+
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -39,12 +52,13 @@ export async function getShopToken(shopId: number): Promise<{ access_token: stri
   const expiry = shop.expired_at ? new Date(shop.expired_at) : new Date(0);
   const isExpired = now.getTime() > expiry.getTime() - 5 * 60 * 1000;
 
-  if (shop.access_token && !isExpired) {
+  if (shop.access_token && !isExpired && !forceRefresh) {
     return { access_token: shop.access_token };
   }
 
-  // Token expired — try to refresh it
-  console.log(`[getShopToken] Token expired for shop ${shopId}, refreshing...`);
+  // Token expired or force refresh requested
+  const reason = forceRefresh ? 'force refresh (token rejected by Shopee)' : 'token expired';
+  console.log(`[getShopToken] Refreshing token for shop ${shopId}: ${reason}`);
 
   const refreshResult = await refreshAccessToken(shopId, shop.refresh_token, supabase);
 
@@ -77,7 +91,7 @@ export async function getShopToken(shopId: number): Promise<{ access_token: stri
   const freshExpiry = freshShop.expired_at ? new Date(freshShop.expired_at) : new Date(0);
   const freshIsExpired = new Date().getTime() > freshExpiry.getTime() - 5 * 60 * 1000;
 
-  if (freshShop.access_token && !freshIsExpired) {
+  if (freshShop.access_token && !freshIsExpired && freshShop.access_token !== shop.access_token) {
     console.log(`[getShopToken] Found a valid token from DB (refreshed by another request) for shop ${shopId}`);
     return { access_token: freshShop.access_token };
   }
@@ -97,6 +111,21 @@ export async function getShopToken(shopId: number): Promise<{ access_token: stri
     access_token: '',
     error: `Token refresh failed for shop ${shopId}: ${refreshResult.error}. Please re-authorize the shop.`,
   };
+}
+
+/**
+ * Check if a Shopee API error indicates an invalid/expired token.
+ * Use this to decide whether to force-refresh and retry.
+ */
+export function isTokenError(shopeeError: string | undefined | null): boolean {
+  if (!shopeeError) return false;
+  const lower = shopeeError.toLowerCase();
+  return (
+    lower.includes('invalid_access_token') ||
+    lower.includes('invalid_acceess_token') || // Shopee typo in their API
+    lower.includes('access_token_expired') ||
+    lower.includes('token') && lower.includes('invalid')
+  );
 }
 
 /**

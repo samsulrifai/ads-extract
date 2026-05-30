@@ -1,12 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { PARTNER_ID, API_HOST, generateSign } from './_lib/shopee.js';
-import { getShopToken } from './_lib/get-shop-token.js';
+import { getShopToken, isTokenError } from './_lib/get-shop-token.js';
 
 /**
  * POST /api/sync-ads-data
  * Fetch ads daily performance from Shopee.
  * Token is fetched server-side from Supabase — no client token needed.
+ * Auto-retries with force token refresh if Shopee rejects the token.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
@@ -48,72 +49,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    const startTime = Math.floor(new Date(start_date + 'T00:00:00+07:00').getTime() / 1000);
-    const endTime = Math.floor(new Date(end_date + 'T23:59:59+07:00').getTime() / 1000);
+    // Try calling Shopee API
+    let result = await callShopeeAdsApi(access_token, shopIdNum, start_date, end_date);
 
-    // Convert YYYY-MM-DD → DD-MM-YYYY (Shopee requires DD-MM-YYYY)
-    const [sy, sm, sd] = start_date.split('-');
-    const [ey, em, ed] = end_date.split('-');
-    const startDateFormatted = `${sd}-${sm}-${sy}`;
-    const endDateFormatted = `${ed}-${em}-${ey}`;
+    // If token was rejected by Shopee, force refresh and retry once
+    if (result.shopeeError && isTokenError(result.shopeeError)) {
+      console.log(`[sync-ads-data] Token rejected by Shopee for shop ${shopIdNum}, force refreshing...`);
+      const { access_token: freshToken, error: refreshError } = await getShopToken(shopIdNum, { forceRefresh: true });
 
-    const apiPath = '/api/v2/ads/get_all_cpc_ads_daily_performance';
-    const timestamp = Math.floor(Date.now() / 1000);
-    const sign = generateSign(apiPath, timestamp, access_token, shopIdNum);
+      if (refreshError || !freshToken) {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        return res.status(200).json({
+          success: false,
+          records_synced: 0,
+          error: refreshError || 'Token refresh failed.',
+          needs_reauth: true,
+        });
+      }
 
-    const queryParams = new URLSearchParams({
-      partner_id: String(PARTNER_ID),
-      timestamp: String(timestamp),
-      sign,
-      access_token,
-      shop_id: String(shopIdNum),
-      start_date: startDateFormatted,
-      end_date: endDateFormatted,
-      start_time: String(startTime),
-      end_time: String(endTime)
-    });
+      // Retry with fresh token
+      result = await callShopeeAdsApi(freshToken, shopIdNum, start_date, end_date);
+    }
 
-    const url = `${API_HOST}${apiPath}?${queryParams.toString()}`;
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-    const data = await response.json();
-
-    // Return full debug info so we can diagnose issues
-    const debug = {
-      partner_id: PARTNER_ID,
-      api_host: API_HOST,
-      api_path: apiPath,
-      shop_id: shopIdNum,
-      start_time: startTime,
-      end_time: endTime,
-      start_date,
-      end_date,
-      http_status: response.status,
-      shopee_error: data.error || null,
-      shopee_message: data.message || data.msg || null,
-      shopee_request_id: data.request_id || null,
-      has_response: !!data.response,
-      response_keys: data.response ? Object.keys(data.response) : [],
-    };
-
-    // Check for error
-    if (data.error && data.error !== '') {
+    // Check for error after retry
+    if (result.shopeeError) {
       res.setHeader('Access-Control-Allow-Origin', '*');
       return res.status(200).json({
         success: false,
         records_synced: 0,
-        error: `${data.error}${data.message ? ': ' + data.message : ''}`,
-        debug,
-        raw_response: data,
+        error: `${result.shopeeError}${result.shopeeMessage ? ': ' + result.shopeeMessage : ''}`,
+        needs_reauth: isTokenError(result.shopeeError),
+        debug: result.debug,
+        raw_response: result.rawData,
       });
     }
 
     // Transform response
-    const records = transformResponse(data.response, shopIdNum, start_date);
+    const records = transformResponse(result.rawData?.response, shopIdNum, start_date);
 
     // Save to Supabase using Admin API to bypass RLS
     if (records.length > 0) {
@@ -142,10 +114,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: records.length > 0,
       records,
       records_synced: records.length,
-      debug,
+      debug: result.debug,
       ...(records.length === 0 ? {
         error: 'No performance data found for the selected period.',
-        raw_response: data,
+        raw_response: result.rawData,
       } : {}),
     });
   } catch (error: any) {
@@ -156,6 +128,72 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       stack: error.stack,
     });
   }
+}
+
+/** Call Shopee Ads API and return structured result */
+async function callShopeeAdsApi(
+  accessToken: string,
+  shopId: number,
+  startDate: string,
+  endDate: string,
+) {
+  const startTime = Math.floor(new Date(startDate + 'T00:00:00+07:00').getTime() / 1000);
+  const endTime = Math.floor(new Date(endDate + 'T23:59:59+07:00').getTime() / 1000);
+
+  // Convert YYYY-MM-DD → DD-MM-YYYY (Shopee requires DD-MM-YYYY)
+  const [sy, sm, sd] = startDate.split('-');
+  const [ey, em, ed] = endDate.split('-');
+  const startDateFormatted = `${sd}-${sm}-${sy}`;
+  const endDateFormatted = `${ed}-${em}-${ey}`;
+
+  const apiPath = '/api/v2/ads/get_all_cpc_ads_daily_performance';
+  const timestamp = Math.floor(Date.now() / 1000);
+  const sign = generateSign(apiPath, timestamp, accessToken, shopId);
+
+  const queryParams = new URLSearchParams({
+    partner_id: String(PARTNER_ID),
+    timestamp: String(timestamp),
+    sign,
+    access_token: accessToken,
+    shop_id: String(shopId),
+    start_date: startDateFormatted,
+    end_date: endDateFormatted,
+    start_time: String(startTime),
+    end_time: String(endTime)
+  });
+
+  const url = `${API_HOST}${apiPath}?${queryParams.toString()}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  const data = await response.json();
+
+  const debug = {
+    partner_id: PARTNER_ID,
+    api_host: API_HOST,
+    api_path: apiPath,
+    shop_id: shopId,
+    start_time: startTime,
+    end_time: endTime,
+    start_date: startDate,
+    end_date: endDate,
+    http_status: response.status,
+    shopee_error: data.error || null,
+    shopee_message: data.message || data.msg || null,
+    shopee_request_id: data.request_id || null,
+    has_response: !!data.response,
+    response_keys: data.response ? Object.keys(data.response) : [],
+  };
+
+  return {
+    shopeeError: (data.error && data.error !== '') ? data.error : null,
+    shopeeMessage: data.message || data.msg || null,
+    debug,
+    rawData: data,
+  };
 }
 
 /** Transform Shopee daily performance response into flat records */
