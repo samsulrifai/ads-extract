@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase with the service role key to bypass RLS and allow admin actions
