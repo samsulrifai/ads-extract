@@ -24,33 +24,6 @@ function getShopFromLocalStorage(): Shop | null {
   };
 }
 
-/**
- * Push localStorage tokens to Supabase so other devices can use them.
- */
-async function pushTokensToSupabase(): Promise<void> {
-  const tokens = loadTokens();
-  if (!tokens) return;
-
-  try {
-    const res = await fetch('/api/push-tokens', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        shop_id: tokens.shop_id,
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
-        expire_in: tokens.expire_in,
-      }),
-    });
-    const data = await res.json();
-    if (data.success) {
-      console.log('[useShops] Tokens pushed to Supabase successfully');
-    }
-  } catch (err) {
-    console.warn('[useShops] Failed to push tokens to Supabase:', err);
-  }
-}
-
 export function useShops() {
   const [shops, setShops] = useState<Shop[]>([]);
   const [selectedShopId, setSelectedShopId] = useState<number | null>(null);
@@ -61,8 +34,9 @@ export function useShops() {
     setLoading(true);
     setError(null);
 
-    // If localStorage has tokens, push them to Supabase first
-    await pushTokensToSupabase();
+    // NOTE: We no longer auto-push localStorage tokens to Supabase.
+    // Tokens are only pushed to Supabase during initial OAuth callback.
+    // Server-side auto-refresh handles keeping tokens fresh.
 
     let shopList: Shop[] = [];
 
@@ -74,17 +48,7 @@ export function useShops() {
         .order('created_at', { ascending: false });
 
       if (!fetchError && data && data.length > 0) {
-        const localTokens = loadTokens();
-        shopList = data.map((shop: Shop) => {
-          if (localTokens && shop.shopee_shop_id === localTokens.shop_id) {
-            return {
-              ...shop,
-              access_token: localTokens.access_token,
-              refresh_token: localTokens.refresh_token,
-            };
-          }
-          return shop;
-        });
+        shopList = data as Shop[];
       }
     } catch {
       console.warn('Supabase query failed, falling back to localStorage');

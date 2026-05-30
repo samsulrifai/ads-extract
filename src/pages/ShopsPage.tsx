@@ -7,6 +7,10 @@ import {
   CheckCircle2,
   Clock,
   Link2,
+  RefreshCw,
+  Zap,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -39,6 +43,8 @@ import type { Shop } from '@/types';
 export default function ShopsPage() {
   const [connectLoading, setConnectLoading] = useState(false);
   const { shops, refetch: fetchShops, loading } = useShops();
+  const [actionLoading, setActionLoading] = useState<Record<number, string>>({});
+  const [actionResult, setActionResult] = useState<Record<number, { success: boolean; message: string } | null>>({});
 
   const handleConnectShop = async () => {
     setConnectLoading(true);
@@ -61,12 +67,119 @@ export default function ShopsPage() {
     }
   };
 
-  const getTokenStatus = (s: Shop) => {
-    if (!s.expired_at) return { label: 'No Token', variant: 'secondary' as const, icon: Clock };
-    if (new Date() > new Date(s.expired_at)) {
-      return { label: 'Token Expired', variant: 'secondary' as const, icon: Clock };
+  const handleRefreshToken = async (shop: Shop) => {
+    const shopId = shop.shopee_shop_id;
+    setActionLoading(prev => ({ ...prev, [shopId]: 'refresh' }));
+    setActionResult(prev => ({ ...prev, [shopId]: null }));
+
+    try {
+      // Call the server to force-refresh the token
+      const res = await fetch('/api/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shop_id: shopId }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setActionResult(prev => ({
+          ...prev,
+          [shopId]: { success: true, message: 'Token refreshed successfully!' },
+        }));
+        await fetchShops();
+      } else {
+        setActionResult(prev => ({
+          ...prev,
+          [shopId]: { success: false, message: data.error || 'Refresh failed' },
+        }));
+      }
+    } catch (err: any) {
+      setActionResult(prev => ({
+        ...prev,
+        [shopId]: { success: false, message: err.message || 'Network error' },
+      }));
+    } finally {
+      setActionLoading(prev => ({ ...prev, [shopId]: '' }));
     }
-    return { label: 'Connected', variant: 'default' as const, icon: CheckCircle2 };
+  };
+
+  const handleTestConnection = async (shop: Shop) => {
+    const shopId = shop.shopee_shop_id;
+    setActionLoading(prev => ({ ...prev, [shopId]: 'test' }));
+    setActionResult(prev => ({ ...prev, [shopId]: null }));
+
+    try {
+      const res = await fetch('/api/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shop_id: shopId }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setActionResult(prev => ({
+          ...prev,
+          [shopId]: {
+            success: true,
+            message: `✅ Connected! Shop: ${data.shop_name || shopId}`,
+          },
+        }));
+        // Update shop name if returned
+        if (data.shop_name) {
+          await fetchShops();
+        }
+      } else {
+        setActionResult(prev => ({
+          ...prev,
+          [shopId]: {
+            success: false,
+            message: data.needs_reauth
+              ? '❌ Token invalid. Please re-authorize.'
+              : `❌ ${data.error || 'Connection failed'}`,
+          },
+        }));
+      }
+    } catch (err: any) {
+      setActionResult(prev => ({
+        ...prev,
+        [shopId]: { success: false, message: `Network error: ${err.message}` },
+      }));
+    } finally {
+      setActionLoading(prev => ({ ...prev, [shopId]: '' }));
+    }
+  };
+
+  const handleReauthorize = async () => {
+    setConnectLoading(true);
+    try {
+      const authUrl = await getAuthUrl();
+      window.location.href = authUrl;
+    } catch (err) {
+      console.error('Failed to get auth URL:', err);
+      setConnectLoading(false);
+    }
+  };
+
+  const getTokenStatus = (s: Shop) => {
+    if (!s.expired_at && !s.refresh_token) {
+      return { label: 'No Token', variant: 'secondary' as const, icon: Clock, color: 'text-muted-foreground' };
+    }
+
+    const now = new Date();
+    const expiry = s.expired_at ? new Date(s.expired_at) : new Date(0);
+    const accessTokenValid = now < expiry;
+
+    if (accessTokenValid) {
+      return { label: 'Connected', variant: 'default' as const, icon: CheckCircle2, color: 'text-emerald-500' };
+    }
+
+    // Access token expired, but refresh token should still work (valid 30 days)
+    if (s.refresh_token) {
+      return { label: 'Auto-refresh', variant: 'secondary' as const, icon: RefreshCw, color: 'text-blue-500' };
+    }
+
+    // No refresh token — needs re-auth
+    return { label: 'Needs Re-auth', variant: 'destructive' as const, icon: AlertTriangle, color: 'text-red-500' };
   };
 
   const formatExpiry = (s: Shop) => {
@@ -187,6 +300,10 @@ export default function ShopsPage() {
           {shops.map(shop => {
             const status = getTokenStatus(shop);
             const StatusIcon = status.icon;
+            const shopId = shop.shopee_shop_id;
+            const isLoading = !!actionLoading[shopId];
+            const result = actionResult[shopId];
+
             return (
               <Card key={shop.id} className="glass-card glass-card-hover gradient-border animate-slide-up overflow-hidden">
                 <CardHeader className="pb-3">
@@ -203,7 +320,7 @@ export default function ShopsPage() {
                       </div>
                     </div>
                     <Badge variant={status.variant} className="text-[10px] gap-1">
-                      <StatusIcon className="h-3 w-3" />
+                      <StatusIcon className={`h-3 w-3 ${status.color}`} />
                       {status.label}
                     </Badge>
                   </div>
@@ -215,9 +332,68 @@ export default function ShopsPage() {
                       <span className="text-foreground">{formatExpiry(shop)}</span>
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Connected:{' '}
+                      Last updated:{' '}
                       <span className="text-foreground">{formatSavedAt(shop)}</span>
                     </p>
+                  </div>
+
+                  {/* Action result message */}
+                  {result && (
+                    <div className={`text-xs px-3 py-2 rounded-lg mb-3 ${
+                      result.success
+                        ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                        : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                    }`}>
+                      {result.message}
+                    </div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-[11px] h-8 px-2"
+                      disabled={isLoading}
+                      onClick={() => handleTestConnection(shop)}
+                    >
+                      {actionLoading[shopId] === 'test' ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <>
+                          <Zap className="h-3 w-3 mr-1" />
+                          Test
+                        </>
+                      )}
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-[11px] h-8 px-2"
+                      disabled={isLoading}
+                      onClick={() => handleRefreshToken(shop)}
+                    >
+                      {actionLoading[shopId] === 'refresh' ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <>
+                          <RefreshCw className="h-3 w-3 mr-1" />
+                          Refresh
+                        </>
+                      )}
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-[11px] h-8 px-2 text-blue-500 hover:text-blue-500 hover:bg-blue-500/10"
+                      disabled={isLoading || connectLoading}
+                      onClick={handleReauthorize}
+                    >
+                      <ExternalLink className="h-3 w-3 mr-1" />
+                      Re-auth
+                    </Button>
                   </div>
 
                   <AlertDialog>

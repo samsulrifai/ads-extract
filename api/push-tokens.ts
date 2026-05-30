@@ -4,9 +4,9 @@ import { createClient } from '@supabase/supabase-js';
 /**
  * POST /api/push-tokens
  * Push localStorage tokens to Supabase so other devices can use them.
- * Called automatically by the frontend when localStorage has tokens.
+ * Only updates if the local token is newer than what's already in the database.
  * 
- * Body: { shop_id, access_token, refresh_token, expire_in }
+ * Body: { shop_id, access_token, refresh_token, expire_in, saved_at? }
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
@@ -23,7 +23,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { shop_id, access_token, refresh_token, expire_in } = req.body;
+    const { shop_id, access_token, refresh_token, expire_in, saved_at } = req.body;
 
     if (!shop_id || !access_token || !refresh_token) {
       res.setHeader('Access-Control-Allow-Origin', '*');
@@ -39,6 +39,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Check if the server already has a newer token
+    const { data: existingShop } = await supabase
+      .from('shops')
+      .select('updated_at')
+      .eq('shopee_shop_id', Number(shop_id))
+      .single();
+
+    if (existingShop && saved_at) {
+      const localSavedAt = new Date(saved_at * 1000);
+      const serverUpdatedAt = new Date(existingShop.updated_at);
+
+      if (serverUpdatedAt > localSavedAt) {
+        console.log(
+          `[push-tokens] Skipping push for shop ${shop_id}: ` +
+          `server token (${serverUpdatedAt.toISOString()}) is newer than local (${localSavedAt.toISOString()})`
+        );
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        return res.status(200).json({
+          success: true,
+          skipped: true,
+          reason: 'Server token is newer than local token',
+        });
+      }
+    }
+
     const timestamp = Math.floor(Date.now() / 1000);
     const expiredAt = new Date((timestamp + (expire_in || 14400)) * 1000).toISOString();
 
