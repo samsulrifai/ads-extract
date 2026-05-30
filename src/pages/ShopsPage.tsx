@@ -73,11 +73,11 @@ export default function ShopsPage() {
     setActionResult(prev => ({ ...prev, [shopId]: null }));
 
     try {
-      // Call the server to force-refresh the token
-      const res = await fetch('/api/test-connection', {
+      // Call the server to test connection (which also triggers auto-refresh)
+      const res = await fetch('/api/refresh-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shop_id: shopId }),
+        body: JSON.stringify({ shop_id: shopId, action: 'test' }),
       });
       const data = await res.json();
 
@@ -109,10 +109,10 @@ export default function ShopsPage() {
     setActionResult(prev => ({ ...prev, [shopId]: null }));
 
     try {
-      const res = await fetch('/api/test-connection', {
+      const res = await fetch('/api/refresh-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shop_id: shopId }),
+        body: JSON.stringify({ shop_id: shopId, action: 'test' }),
       });
       const data = await res.json();
 

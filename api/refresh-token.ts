@@ -1,13 +1,19 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { PARTNER_ID, API_HOST, generateSign } from './_lib/shopee.js';
+import { getShopToken } from './_lib/get-shop-token.js';
+import { getShopInfo } from './_lib/get-shop-info.js';
 
 /**
  * POST /api/refresh-token
- * Refresh an expired access_token using a refresh_token.
+ * Multi-purpose token management endpoint.
  *
- * Body: { refresh_token: string, shop_id: number }
- * Returns: { success, access_token, refresh_token, expire_in, shop_id }
+ * Actions (via body.action):
+ * - "refresh" (default): Refresh an expired access_token using a refresh_token.
+ *   Body: { shop_id, refresh_token }
+ *
+ * - "test": Test if a shop's token is valid by calling Shopee API.
+ *   Body: { shop_id, action: "test" }
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
@@ -22,6 +28,98 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const action = req.body?.action || 'refresh';
+
+  if (action === 'test') {
+    return handleTestConnection(req, res);
+  }
+
+  return handleRefreshToken(req, res);
+}
+
+/**
+ * Test whether a shop's token is actually valid by calling Shopee API.
+ */
+async function handleTestConnection(req: VercelRequest, res: VercelResponse) {
+  try {
+    const { shop_id } = req.body;
+
+    if (!shop_id) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      return res.status(400).json({ success: false, error: 'Missing shop_id' });
+    }
+
+    const shopIdNum = Number(shop_id);
+
+    // Step 1: Get a valid token (auto-refreshes if expired)
+    const { access_token, error: tokenError } = await getShopToken(shopIdNum);
+    if (tokenError || !access_token) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      return res.status(200).json({
+        success: false,
+        token_status: 'invalid',
+        error: tokenError || 'No valid token found.',
+        needs_reauth: true,
+      });
+    }
+
+    // Step 2: Call Shopee API to verify the token actually works
+    const shopName = await getShopInfo(shopIdNum, access_token);
+
+    if (shopName) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      return res.status(200).json({
+        success: true,
+        token_status: 'valid',
+        shop_name: shopName,
+      });
+    }
+
+    // getShopInfo returned null — token might be invalid at Shopee side
+    // Try force refresh and test again
+    console.log(`[test-connection] First attempt failed for shop ${shopIdNum}, trying force refresh...`);
+    const { access_token: freshToken, error: refreshError } = await getShopToken(shopIdNum, { forceRefresh: true });
+
+    if (refreshError || !freshToken) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      return res.status(200).json({
+        success: false,
+        token_status: 'invalid',
+        error: refreshError || 'Token refresh failed.',
+        needs_reauth: true,
+      });
+    }
+
+    const retryName = await getShopInfo(shopIdNum, freshToken);
+
+    if (retryName) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      return res.status(200).json({
+        success: true,
+        token_status: 'valid',
+        shop_name: retryName,
+        refreshed: true,
+      });
+    }
+
+    // Even after refresh, API call failed
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.status(200).json({
+      success: false,
+      token_status: 'invalid',
+      error: 'Token appears valid but Shopee API returned no data. The shop may need re-authorization.',
+      needs_reauth: true,
+    });
+  } catch (error: any) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Refresh an expired access_token using a refresh_token.
+ */
+async function handleRefreshToken(req: VercelRequest, res: VercelResponse) {
   try {
     const { refresh_token, shop_id } = req.body;
 
