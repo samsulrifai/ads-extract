@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
+import { getSql } from './_lib/db.js';
 
 /**
  * POST /api/get-campaigns
- * Fetch campaign performance summary from Supabase ads_performance table.
+ * Fetch campaign performance summary from the ads_performance table.
  * Groups data by ads_type to show performance per campaign type.
  *
  * Body: { shop_id: number, start_date?: string, end_date?: string }
@@ -30,31 +30,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ success: false, error: 'Missing shop_id' });
     }
 
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseServiceKey) {
+    if (!process.env.DATABASE_URL) {
       res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.status(500).json({ success: false, error: 'Missing Supabase credentials' });
+      return res.status(500).json({ success: false, error: 'Missing DATABASE_URL' });
     }
-
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Query ads_performance grouped by ads_type
-    let query = supabase
-      .from('ads_performance')
-      .select('*')
-      .eq('shop_id', Number(shop_id))
-      .order('date', { ascending: false });
-
-    if (start_date) {
-      query = query.gte('date', start_date);
+    let data: any[] | null = null;
+    let dbError: any = null;
+    try {
+      data = await getSql()`
+        SELECT * FROM ads_performance
+        WHERE shop_id = ${Number(shop_id)}
+          AND (${start_date ?? null}::date IS NULL OR date >= ${start_date ?? null}::date)
+          AND (${end_date ?? null}::date IS NULL OR date <= ${end_date ?? null}::date)
+        ORDER BY date DESC`;
+    } catch (err) {
+      dbError = err;
     }
-    if (end_date) {
-      query = query.lte('date', end_date);
-    }
-
-    const { data, error: dbError } = await query;
 
     if (dbError) {
       res.setHeader('Access-Control-Allow-Origin', '*');

@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 
-import { supabase } from '@/lib/supabase';
+import { neon } from '@/lib/neon';
 import type { Order, SyncOrdersResponse } from '@/types';
 
 export interface SyncOrdersRequest {
@@ -15,7 +15,7 @@ export function useOrders() {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch orders directly from Supabase Database (very fast, no Shopee API hit)
+  // Fetch orders directly from the database (very fast, no Shopee API hit)
   const fetchOrders = useCallback(async (request: SyncOrdersRequest) => {
     setLoadingDb(true);
     setError(null);
@@ -25,7 +25,7 @@ export function useOrders() {
       const startDateTime = `${request.start_date}T00:00:00Z`;
       const endDateTime = `${request.end_date}T23:59:59Z`;
 
-      const { data, error: dbError } = await supabase
+      const { data, error: dbError } = await neon
         .from('orders')
         .select('*')
         .eq('shop_id', request.shop_id)

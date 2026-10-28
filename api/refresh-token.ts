@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
+import { getSql } from './_lib/db.js';
 import { PARTNER_ID, API_HOST, generateSign } from './_lib/shopee.js';
 import { getShopToken } from './_lib/get-shop-token.js';
 import { getShopInfo } from './_lib/get-shop-info.js';
@@ -155,24 +155,21 @@ async function handleRefreshToken(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ success: false, error: data.error, message: data.message });
     }
 
-    // Also update tokens in Supabase so other devices can access them
+    // Also update tokens in the database so other devices can access them
     try {
-      const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-      if (supabaseUrl && supabaseServiceKey) {
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      if (process.env.DATABASE_URL) {
         const expiredAt = new Date((timestamp + data.expire_in) * 1000).toISOString();
 
-        await supabase.from('shops').update({
-          access_token: data.access_token,
-          refresh_token: data.refresh_token,
-          expired_at: expiredAt,
-          updated_at: new Date().toISOString(),
-        }).eq('shopee_shop_id', Number(shop_id));
+        await getSql()`
+          UPDATE shops SET
+            access_token = ${data.access_token},
+            refresh_token = ${data.refresh_token},
+            expired_at = ${expiredAt},
+            updated_at = now()
+          WHERE shopee_shop_id = ${Number(shop_id)}`;
       }
     } catch (dbErr) {
-      console.error('Failed to update tokens in Supabase:', dbErr);
+      console.error('Failed to update tokens in database:', dbErr);
     }
 
     res.setHeader('Access-Control-Allow-Origin', '*');

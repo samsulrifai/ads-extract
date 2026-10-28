@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { neon } from '@/lib/neon';
 import { loadTokens } from '@/lib/shopee-client';
 import type { Shop } from '@/types';
 
@@ -34,15 +34,15 @@ export function useShops() {
     setLoading(true);
     setError(null);
 
-    // NOTE: We no longer auto-push localStorage tokens to Supabase.
-    // Tokens are only pushed to Supabase during initial OAuth callback.
+    // NOTE: We no longer auto-push localStorage tokens to the database.
+    // Tokens are only pushed to the database during initial OAuth callback.
     // Server-side auto-refresh handles keeping tokens fresh.
 
     let shopList: Shop[] = [];
 
-    // Try Supabase
+    // Try the database (Neon Data API)
     try {
-      const { data, error: fetchError } = await supabase
+      const { data, error: fetchError } = await neon
         .from('shops')
         .select('*')
         .order('created_at', { ascending: false });
@@ -51,10 +51,10 @@ export function useShops() {
         shopList = data as Shop[];
       }
     } catch {
-      console.warn('Supabase query failed, falling back to localStorage');
+      console.warn('Database query failed, falling back to localStorage');
     }
 
-    // Fallback: if Supabase returned nothing, check localStorage
+    // Fallback: if the database returned nothing, check localStorage
     if (shopList.length === 0) {
       const localShop = getShopFromLocalStorage();
       if (localShop) {

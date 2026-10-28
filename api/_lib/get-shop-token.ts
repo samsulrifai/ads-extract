@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { getSql } from './db.js';
 import { PARTNER_ID, API_HOST, generateSign } from './shopee.js';
 
 interface GetShopTokenOptions {
@@ -7,7 +7,7 @@ interface GetShopTokenOptions {
 }
 
 /**
- * Get a valid access_token for a shop from Supabase.
+ * Get a valid access_token for a shop from the database.
  * Auto-refreshes if the token is expired.
  *
  * Handles race conditions: if two requests try to refresh simultaneously,
@@ -23,23 +23,14 @@ export async function getShopToken(
 ): Promise<{ access_token: string; error?: string }> {
   const { forceRefresh = false } = options;
 
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !supabaseServiceKey) {
-    return { access_token: '', error: 'Missing Supabase credentials in environment' };
+  if (!process.env.DATABASE_URL) {
+    return { access_token: '', error: 'Missing DATABASE_URL in environment' };
   }
 
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
   // Get shop from database
-  const { data: shop, error: dbError } = await supabase
-    .from('shops')
-    .select('access_token, refresh_token, expired_at')
-    .eq('shopee_shop_id', shopId)
-    .single();
+  const [shop] = await readShopTokens(shopId);
 
-  if (dbError || !shop) {
+  if (!shop) {
     return { access_token: '', error: `Shop ${shopId} not found in database. Please authorize first.` };
   }
 
@@ -60,8 +51,7 @@ export async function getShopToken(
   const reason = forceRefresh ? 'force refresh (token rejected by Shopee)' : 'token expired';
   console.log(`[getShopToken] Refreshing token for shop ${shopId}: ${reason}`);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const refreshResult = await refreshAccessToken(shopId, shop.refresh_token, supabase as any);
+  const refreshResult = await refreshAccessToken(shopId, shop.refresh_token);
 
   if (refreshResult.access_token) {
     return { access_token: refreshResult.access_token };
@@ -78,13 +68,9 @@ export async function getShopToken(
   // Small delay to let the other request finish writing
   await sleep(500);
 
-  const { data: freshShop, error: freshDbError } = await supabase
-    .from('shops')
-    .select('access_token, refresh_token, expired_at')
-    .eq('shopee_shop_id', shopId)
-    .single();
+  const [freshShop] = await readShopTokens(shopId);
 
-  if (freshDbError || !freshShop) {
+  if (!freshShop) {
     return { access_token: '', error: refreshResult.error };
   }
 
@@ -100,8 +86,7 @@ export async function getShopToken(
   // DB token is also expired, and it's a different refresh_token — try once more
   if (freshShop.refresh_token && freshShop.refresh_token !== shop.refresh_token) {
     console.log(`[getShopToken] Found a new refresh_token in DB for shop ${shopId}, retrying refresh...`);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const retryResult = await refreshAccessToken(shopId, freshShop.refresh_token, supabase as any);
+    const retryResult = await refreshAccessToken(shopId, freshShop.refresh_token);
     if (retryResult.access_token) {
       return { access_token: retryResult.access_token };
     }
@@ -135,8 +120,7 @@ export function isTokenError(shopeeError: string | undefined | null): boolean {
  */
 async function refreshAccessToken(
   shopId: number,
-  refreshToken: string,
-  supabase: any
+  refreshToken: string
 ): Promise<{ access_token: string; error?: string }> {
   try {
     const apiPath = '/api/v2/auth/access_token/get';
@@ -174,16 +158,17 @@ async function refreshAccessToken(
       return { access_token: '', error: 'Shopee returned empty tokens' };
     }
 
-    // Save new tokens to Supabase
+    // Save new tokens to the database
     const newExpiredAt = new Date((timestamp + data.expire_in) * 1000).toISOString();
-    const { error: updateError } = await supabase.from('shops').update({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-      expired_at: newExpiredAt,
-      updated_at: new Date().toISOString(),
-    }).eq('shopee_shop_id', shopId);
-
-    if (updateError) {
+    try {
+      await getSql()`
+        UPDATE shops SET
+          access_token = ${data.access_token},
+          refresh_token = ${data.refresh_token},
+          expired_at = ${newExpiredAt},
+          updated_at = now()
+        WHERE shopee_shop_id = ${shopId}`;
+    } catch (updateError) {
       console.error(`[refreshAccessToken] Failed to save new tokens to DB for shop ${shopId}:`, updateError);
       // Still return the token — it's valid even if DB save failed
     }
@@ -194,6 +179,15 @@ async function refreshAccessToken(
     console.error(`[refreshAccessToken] Exception for shop ${shopId}:`, err);
     return { access_token: '', error: `Token refresh error: ${err.message}` };
   }
+}
+
+type ShopTokenRow = { access_token: string | null; refresh_token: string | null; expired_at: Date | null };
+
+async function readShopTokens(shopId: number): Promise<ShopTokenRow[]> {
+  const rows = await getSql()`
+    SELECT access_token, refresh_token, expired_at
+    FROM shops WHERE shopee_shop_id = ${shopId}`;
+  return rows as ShopTokenRow[];
 }
 
 function sleep(ms: number): Promise<void> {

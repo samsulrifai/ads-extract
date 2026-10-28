@@ -1,11 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
+import { upsertRows } from './_lib/db.js';
 import { PARTNER_ID, API_HOST, generateSign, corsHeaders } from './_lib/shopee.js';
 
 /**
  * POST /api/shopee-callback
  * Exchange Shopee authorization code for access_token + refresh_token.
- * Also upserts the shop record into Supabase.
+ * Also upserts the shop record into the database.
  *
  * Body: { code: string, shop_id: number }
  * Returns: { success: true, access_token, refresh_token, expire_in, shop_id }
@@ -63,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Persist shop + tokens to Supabase (best-effort, don't block response)
+    // Persist shop + tokens to the database (best-effort, don't block response)
     let shopName = `Shop ${shop_id}`;
     
     try {
@@ -77,14 +77,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
-      const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-      const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-      if (supabaseUrl && supabaseServiceKey) {
-        const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      if (process.env.DATABASE_URL) {
         const expiredAt = new Date((timestamp + data.expire_in) * 1000).toISOString();
 
-        await supabase.from('shops').upsert(
+        await upsertRows('shops', [
           {
             shopee_shop_id: Number(shop_id),
             name: shopName,
@@ -93,12 +89,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             expired_at: expiredAt,
             updated_at: new Date().toISOString(),
           },
-          { onConflict: 'shopee_shop_id' }
-        );
+        ], ['shopee_shop_id']);
       }
     } catch (dbErr) {
       // Log but don't fail the response — localStorage is the primary store
-      console.error('Failed to persist shop to Supabase:', dbErr);
+      console.error('Failed to persist shop to database:', dbErr);
     }
 
     // Return tokens to frontend (will be stored in localStorage)

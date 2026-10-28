@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { supabase } from '@/lib/supabase';
+import { neon } from '@/lib/neon';
 import { useAuth, type MemberProfile, type UserRole } from '@/contexts/AuthContext';
 
 export default function MembersPage() {
@@ -28,6 +28,7 @@ export default function MembersPage() {
   
   // Invite State
   const [inviteEmail, setInviteEmail] = useState('');
+  const [invitePassword, setInvitePassword] = useState('');
   const [inviteRole, setInviteRole] = useState<UserRole>('member');
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteError, setInviteError] = useState('');
@@ -39,7 +40,7 @@ export default function MembersPage() {
 
   const fetchMembers = async () => {
     try {
-      const { data, error } = await supabase.from('members').select('*').order('created_at', { ascending: true });
+      const { data, error } = await neon.from('members').select('*').order('created_at', { ascending: true });
       if (error) throw error;
       setMembers(data as MemberProfile[]);
     } catch (error) {
@@ -55,30 +56,26 @@ export default function MembersPage() {
     setInviteError('');
 
     try {
-      // In production, you would call your Vercel serverless function:
-      // const res = await fetch('/api/auth/invite', { ... })
-      // For now, since we're using a real cloud DB, you might need the edge function.
-      // Assuming we have the API route ready:
-      
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch('/api/auth/invite', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`,
-        },
-        body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
+      // Create the account with Neon Auth's Admin API (caller needs the Neon Auth
+      // "admin" role), then add the member row. Neon Auth has no email invites,
+      // so the admin sets a temporary password and shares it with the user.
+      const email = inviteEmail.trim().toLowerCase();
+      const { data, error } = await neon.auth.getBetterAuthInstance().admin.createUser({
+        email,
+        password: invitePassword,
+        name: email.split('@')[0],
       });
+      if (error) throw new Error(error.message || 'Failed to create user');
 
-      const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to invite user');
-      }
+      const { error: memberError } = await neon.from('members').upsert(
+        { user_id: data.user.id, email, role: inviteRole },
+        { onConflict: 'email' }
+      );
+      if (memberError) throw memberError;
 
       setIsInviteOpen(false);
       setInviteEmail('');
+      setInvitePassword('');
       setInviteRole('member');
       fetchMembers(); // refresh
     } catch (error: any) {
@@ -88,22 +85,20 @@ export default function MembersPage() {
     }
   };
 
-  const handleDelete = async (userId: string) => {
+  const handleDelete = async (member: MemberProfile) => {
     if (!confirm('Are you sure you want to remove this member?')) return;
     
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch(`/api/auth/members?userId=${userId}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${session?.access_token}` },
-      });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to delete user');
+      // Members that never logged in after the migration have no Neon Auth account yet
+      if (member.user_id) {
+        const { error } = await neon.auth.getBetterAuthInstance().admin.removeUser({ userId: member.user_id });
+        if (error) throw new Error(error.message || 'Failed to delete user');
       }
+
+      const { error: memberError } = await neon.from('members').delete().eq('id', member.id);
+      if (memberError) throw memberError;
       
-      setMembers(members.filter(m => m.user_id !== userId));
+      setMembers(members.filter(m => m.id !== member.id));
     } catch (error: any) {
       alert(error.message);
     }
@@ -148,6 +143,21 @@ export default function MembersPage() {
                 />
               </div>
               <div className="space-y-2">
+                <label className="text-sm font-medium">Temporary password</label>
+                <Input
+                  type="password"
+                  value={invitePassword}
+                  onChange={(e) => setInvitePassword(e.target.value)}
+                  placeholder="Min. 8 characters"
+                  className="bg-black/20"
+                  minLength={8}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Share this password with the member so they can log in.
+                </p>
+              </div>
+              <div className="space-y-2">
                 <label className="text-sm font-medium">Role</label>
                 <Select value={inviteRole} onValueChange={(val) => setInviteRole(val as UserRole)}>
                   <SelectTrigger className="bg-black/20">
@@ -168,7 +178,7 @@ export default function MembersPage() {
                 </Button>
                 <Button type="submit" disabled={inviteLoading}>
                   {inviteLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Send Invite
+                  Create Member
                 </Button>
               </div>
             </form>
@@ -205,6 +215,11 @@ export default function MembersPage() {
                             {member.user_id === user?.id && (
                               <Badge variant="secondary" className="text-[10px] h-4">You</Badge>
                             )}
+                            {!member.user_id && (
+                              <Badge variant="outline" className="text-[10px] h-4" title="No Neon Auth account linked yet">
+                                Pending
+                              </Badge>
+                            )}
                           </span>
                         </div>
                       </td>
@@ -224,7 +239,7 @@ export default function MembersPage() {
                           variant="ghost"
                           size="icon"
                           className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => handleDelete(member.user_id)}
+                          onClick={() => handleDelete(member)}
                           disabled={member.user_id === user?.id} // Cannot delete self
                           title="Remove user"
                         >

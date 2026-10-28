@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
+import { getSql } from './_lib/db.js';
 import { PARTNER_ID, API_HOST, generateSign } from './_lib/shopee.js';
 import { getShopToken, isTokenError } from './_lib/get-shop-token.js';
 
@@ -51,22 +51,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Get Supabase admin client
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-    if (!supabaseUrl || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (!process.env.DATABASE_URL) {
       res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.status(500).json({ success: false, error: 'Missing SUPABASE_SERVICE_ROLE_KEY.' });
+      return res.status(500).json({ success: false, error: 'Missing DATABASE_URL.' });
     }
-    const supabaseAdmin = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY);
+    const sql = getSql();
+    const rangeStart = new Date(start_date + 'T00:00:00+07:00').toISOString();
+    const rangeEnd = new Date(end_date + 'T23:59:59+07:00').toISOString();
 
     // Get orders that need escrow sync (not synced OR missing JSONB detail)
-    const { data: orders, error: dbError } = await supabaseAdmin
-      .from('orders')
-      .select('order_sn')
-      .eq('shop_id', shopIdNum)
-      .gte('create_time', new Date(start_date + 'T00:00:00+07:00').toISOString())
-      .lte('create_time', new Date(end_date + 'T23:59:59+07:00').toISOString())
-      .or('escrow_synced.is.null,escrow_synced.eq.false,escrow_detail.is.null');
+    let orders: { order_sn: string }[] = [];
+    let dbError: any = null;
+    try {
+      orders = await sql`
+        SELECT order_sn FROM orders
+        WHERE shop_id = ${shopIdNum}
+          AND create_time >= ${rangeStart}
+          AND create_time <= ${rangeEnd}
+          AND (escrow_synced IS NULL OR escrow_synced = false OR escrow_detail IS NULL)` as { order_sn: string }[];
+    } catch (err) {
+      dbError = err;
+    }
 
     if (dbError) {
       res.setHeader('Access-Control-Allow-Origin', '*');
@@ -75,13 +80,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!orders || orders.length === 0) {
       // Return existing data even if nothing to sync
-      const { data: allOrders } = await supabaseAdmin
-        .from('orders')
-        .select('*')
-        .eq('shop_id', shopIdNum)
-        .gte('create_time', new Date(start_date + 'T00:00:00+07:00').toISOString())
-        .lte('create_time', new Date(end_date + 'T23:59:59+07:00').toISOString())
-        .order('create_time', { ascending: false });
+      const allOrders = await sql`
+        SELECT * FROM orders
+        WHERE shop_id = ${shopIdNum}
+          AND create_time >= ${rangeStart}
+          AND create_time <= ${rangeEnd}
+        ORDER BY create_time DESC`;
 
       res.setHeader('Access-Control-Allow-Origin', '*');
       return res.status(200).json({
@@ -114,23 +118,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
 
           if (escrowData && !escrowData.tokenError) {
-            const { error: updateError } = await supabaseAdmin
-              .from('orders')
-              .update({
-                original_price: escrowData.original_price || 0,
-                seller_voucher: escrowData.seller_voucher || 0,
-                shopee_voucher: escrowData.shopee_voucher || 0,
-                shipping_fee: escrowData.shipping_fee || 0,
-                commission_fee: escrowData.commission_fee || 0,
-                service_fee: escrowData.service_fee || 0,
-                transaction_fee: escrowData.transaction_fee || 0,
-                escrow_amount: escrowData.escrow_amount || 0,
-                escrow_detail: escrowData.raw,
-                escrow_synced: true,
-              })
-              .eq('order_sn', order.order_sn);
-
-            if (updateError) {
+            try {
+              await sql`
+                UPDATE orders SET
+                  original_price = ${escrowData.original_price || 0},
+                  seller_voucher = ${escrowData.seller_voucher || 0},
+                  shopee_voucher = ${escrowData.shopee_voucher || 0},
+                  shipping_fee = ${escrowData.shipping_fee || 0},
+                  commission_fee = ${escrowData.commission_fee || 0},
+                  service_fee = ${escrowData.service_fee || 0},
+                  transaction_fee = ${escrowData.transaction_fee || 0},
+                  escrow_amount = ${escrowData.escrow_amount || 0},
+                  escrow_detail = ${JSON.stringify(escrowData.raw ?? null)}::jsonb,
+                  escrow_synced = true
+                WHERE order_sn = ${order.order_sn}`;
+            } catch (updateError: any) {
               throw new Error(`Update ${order.order_sn}: ${updateError.message}`);
             }
             return order.order_sn;
@@ -175,13 +177,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Return all orders with updated data
-    const { data: allOrders } = await supabaseAdmin
-      .from('orders')
-      .select('*')
-      .eq('shop_id', shopIdNum)
-      .gte('create_time', new Date(start_date + 'T00:00:00+07:00').toISOString())
-      .lte('create_time', new Date(end_date + 'T23:59:59+07:00').toISOString())
-      .order('create_time', { ascending: false });
+    const allOrders = await sql`
+      SELECT * FROM orders
+      WHERE shop_id = ${shopIdNum}
+        AND create_time >= ${rangeStart}
+        AND create_time <= ${rangeEnd}
+      ORDER BY create_time DESC`;
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     return res.status(200).json({

@@ -1,12 +1,16 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import type { User } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { neon } from '@/lib/neon';
 
 export type UserRole = 'admin' | 'member';
 
+export interface User {
+  id: string;
+  email?: string;
+}
+
 export interface MemberProfile {
   id: string;
-  user_id: string;
+  user_id: string | null;
   email: string;
   role: UserRole;
   assigned_shop_ids: number[];
@@ -35,21 +39,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    neon.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchProfile(session.user.id);
+        fetchProfile();
       } else {
         setLoading(false);
       }
     });
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    const { data: { subscription } } = neon.auth.onAuthStateChange(
       (_event, session) => {
         setUser(session?.user ?? null);
         if (session?.user) {
-          fetchProfile(session.user.id);
+          fetchProfile();
         } else {
           setProfile(null);
           setLoading(false);
@@ -62,16 +66,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const fetchProfile = async (userId: string) => {
+  const fetchProfile = async () => {
     try {
-      const { data, error } = await supabase
-        .from('members')
-        .select('*')
-        .eq('user_id', userId)
-        .single();
+      // Returns the caller's member row, linking a pending (migrated/invited)
+      // row by email or making the very first user admin. See db/schema.sql.
+      const { data, error } = await neon.rpc('claim_membership').maybeSingle();
 
       if (error) throw error;
-      setProfile(data as MemberProfile);
+      setProfile(data as MemberProfile | null);
     } catch (error) {
       console.error('Error fetching member profile:', error);
       setProfile(null);
@@ -81,7 +83,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    await neon.auth.signOut();
   };
 
   const isAdmin = profile?.role === 'admin';
