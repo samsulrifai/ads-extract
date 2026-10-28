@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { neon } from '@/lib/neon';
 import type { Order, SyncRequest } from '@/types';
 
 const API_BASE = import.meta.env.DEV ? '' : '';
@@ -12,12 +12,12 @@ export function useEarnings() {
   const [error, setError] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState('');
 
-  // Fetch orders with escrow data from Supabase
+  // Fetch orders with escrow data from the database
   const fetchFromDb = useCallback(async (params: SyncRequest) => {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: dbError } = await supabase
+      const { data, error: dbError } = await neon
         .from('orders')
         .select('*')
         .eq('shop_id', params.shop_id)

@@ -1,73 +1,27 @@
-# React + TypeScript + Vite
+# Antigravity — Shopee Ads Data Extractor
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite dashboard for Shopee ads, orders and earnings. Serverless API on Vercel (`api/`), database and auth on **Neon** (Postgres + Neon Auth + Data API).
 
-Currently, two official plugins are available:
+## Setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. **Neon project**: in the Neon Console enable **Neon Auth** and the **Data API** on the branch.
+2. **Schema**: `psql "$DATABASE_URL" -f db/schema.sql`
+3. **Env**: copy `.env.example` → `.env` (and set the same vars in Vercel, plus the `SHOPEE_*` vars).
+4. `npm install && npm run dev`
 
-## React Compiler
+## Auth & members
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Login uses Neon Auth (email + password). Browser queries go through the Data API with RLS: only users that have a row in `members` can see data.
+- After login the app calls `claim_membership()`, which links a pending `members` row by email, or makes the very first user admin when `members` is empty.
+- Admins create members from the **Members** page (sets a temporary password). The admin must also have the Neon Auth **admin** role (Console → Auth → Users → *Make admin*).
+- Recommended: disable public sign-up in Neon Auth settings, since accounts are created by admins.
 
-## Expanding the ESLint configuration
+## Migrating from Supabase
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+SUPABASE_DB_URL='postgresql://postgres:...@db.xxx.supabase.co:5432/postgres' \
+DATABASE_URL='postgresql://neondb_owner:...@ep-xxx.neon.tech/neondb?sslmode=require' \
+./db/migrate-from-supabase.sh
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Copies `shops`, `ads_performance`, `orders` and `members`. Supabase passwords can't be moved, so each member needs a new Neon Auth account with the same email (sign up, or created in the Neon Console); it is linked to the migrated row on first login.

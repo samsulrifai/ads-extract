@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
+import { upsertRows } from './_lib/db.js';
 import { PARTNER_ID, API_HOST, generateSign } from './_lib/shopee.js';
 import { getShopToken, isTokenError } from './_lib/get-shop-token.js';
 
@@ -30,7 +30,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const shopIdNum = Number(shop_id);
 
-    // Get valid token from Supabase (auto-refreshes if expired)
+    // Get valid token from the database (auto-refreshes if expired)
     let { access_token, error: tokenError } = await getShopToken(shopIdNum);
     if (tokenError || !access_token) {
       const needsReauth = tokenError?.includes('re-authorize') || tokenError?.includes('invalid_access_token');
@@ -141,23 +141,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // 3. Save to Supabase in batches of 100
+    // 3. Save to database in batches of 100
     if (records.length > 0) {
-      const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-      if (!supabaseUrl || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-        console.warn('Supabase credentials missing in env.');
+      if (!process.env.DATABASE_URL) {
+        console.warn('DATABASE_URL missing in env.');
         res.setHeader('Access-Control-Allow-Origin', '*');
-        return res.status(500).json({ success: false, error: 'Missing SUPABASE_SERVICE_ROLE_KEY.' });
+        return res.status(500).json({ success: false, error: 'Missing DATABASE_URL.' });
       }
-
-      const supabaseAdmin = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
       const DB_BATCH = 100;
       for (let i = 0; i < records.length; i += DB_BATCH) {
         const batch = records.slice(i, i + DB_BATCH);
-        const { error: dbError } = await supabaseAdmin
-          .from('orders')
-          .upsert(batch, { onConflict: 'order_sn' });
+        let dbError: any = null;
+        try {
+          await upsertRows('orders', batch, ['order_sn']);
+        } catch (err) {
+          dbError = err;
+        }
 
         if (dbError) {
           console.error('Failed to save orders batch to database:', dbError);

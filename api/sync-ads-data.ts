@@ -1,12 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
+import { upsertRows } from './_lib/db.js';
 import { PARTNER_ID, API_HOST, generateSign } from './_lib/shopee.js';
 import { getShopToken, isTokenError } from './_lib/get-shop-token.js';
 
 /**
  * POST /api/sync-ads-data
  * Fetch ads daily performance from Shopee.
- * Token is fetched server-side from Supabase — no client token needed.
+ * Token is fetched server-side from the database — no client token needed.
  * Auto-retries with force token refresh if Shopee rejects the token.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -36,7 +36,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const shopIdNum = Number(shop_id);
 
-    // Get valid token from Supabase (auto-refreshes if expired)
+    // Get valid token from the database (auto-refreshes if expired)
     const { access_token, error: tokenError } = await getShopToken(shopIdNum);
     if (tokenError || !access_token) {
       const needsReauth = tokenError?.includes('re-authorize') || tokenError?.includes('invalid_access_token');
@@ -87,20 +87,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Transform response
     const records = transformResponse(result.rawData?.response, shopIdNum, start_date);
 
-    // Save to Supabase using Admin API to bypass RLS
+    // Save to database with the owner connection (bypasses RLS)
     if (records.length > 0) {
-      const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-      if (!supabaseUrl || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-        console.warn('Supabase credentials missing in env.');
+      if (!process.env.DATABASE_URL) {
+        console.warn('DATABASE_URL missing in env.');
         res.setHeader('Access-Control-Allow-Origin', '*');
-        return res.status(500).json({ success: false, error: 'Missing SUPABASE_SERVICE_ROLE_KEY.' });
+        return res.status(500).json({ success: false, error: 'Missing DATABASE_URL.' });
       }
 
-      const supabaseAdmin = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY);
-
-      const { error: dbError } = await supabaseAdmin
-        .from('ads_performance')
-        .upsert(records, { onConflict: 'shop_id,date,ads_type' });
+      let dbError: any = null;
+      try {
+        await upsertRows('ads_performance', records, ['shop_id', 'date', 'ads_type']);
+      } catch (err) {
+        dbError = err;
+      }
 
       if (dbError) {
         console.error('Failed to save ads performance to database:', dbError);

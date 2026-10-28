@@ -37,7 +37,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { getAuthUrl, clearTokens } from '@/lib/shopee-client';
 import { useShops } from '@/hooks/useShops';
-import { supabase } from '@/lib/supabase';
+import { neon } from '@/lib/neon';
 import type { Shop } from '@/types';
 
 export default function ShopsPage() {
@@ -59,7 +59,7 @@ export default function ShopsPage() {
 
   const handleDisconnect = async (shop: Shop) => {
     try {
-      await supabase.from('shops').delete().eq('shopee_shop_id', shop.shopee_shop_id);
+      await neon.from('shops').delete().eq('shopee_shop_id', shop.shopee_shop_id);
       clearTokens();
       await fetchShops();
     } catch (err) {

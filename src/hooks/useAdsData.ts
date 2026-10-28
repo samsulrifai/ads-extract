@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import { supabase } from '@/lib/supabase';
+import { neon } from '@/lib/neon';
 
 import type { AdsPerformance, KPIData, SyncResponse } from '@/types';
 
@@ -15,12 +15,12 @@ export function useAdsData() {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch ads data directly from Supabase Database (very fast, no Shopee API hit)
+  // Fetch ads data directly from the database (very fast, no Shopee API hit)
   const fetchAdsFromDb = useCallback(async (request: SyncAdsRequest) => {
     setLoadingDb(true);
     setError(null);
     try {
-      const { data: records, error: dbError } = await supabase
+      const { data: records, error: dbError } = await neon
         .from('ads_performance')
         .select('*')
         .eq('shop_id', request.shop_id)

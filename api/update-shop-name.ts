@@ -1,11 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
+import { getSql } from './_lib/db.js';
 import { getShopInfo } from './_lib/get-shop-info.js';
 import { getShopToken } from './_lib/get-shop-token.js';
 
 /**
  * POST /api/update-shop-name
- * Fetches the real shop name from Shopee API and updates it in Supabase.
+ * Fetches the real shop name from Shopee API and updates it in the database.
  * 
  * Body: { shop_id: number }
  */
@@ -55,24 +55,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Update in Supabase
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseServiceKey) {
+    // Update in database
+    if (!process.env.DATABASE_URL) {
       res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.status(500).json({ success: false, error: 'Missing Supabase credentials' });
+      return res.status(500).json({ success: false, error: 'Missing DATABASE_URL' });
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const { error: dbError } = await supabase
-      .from('shops')
-      .update({ name: shopName })
-      .eq('shopee_shop_id', shopIdNum);
-
-    if (dbError) {
+    try {
+      await getSql()`UPDATE shops SET name = ${shopName} WHERE shopee_shop_id = ${shopIdNum}`;
+    } catch (dbError: any) {
       res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.status(200).json({ success: false, error: dbError.message, step: 'supabase_update' });
+      return res.status(200).json({ success: false, error: dbError.message, step: 'db_update' });
     }
 
     res.setHeader('Access-Control-Allow-Origin', '*');

@@ -4,7 +4,7 @@ import { Rocket, Loader2 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/lib/supabase';
+import { neon } from '@/lib/neon';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function LoginPage() {
@@ -27,7 +27,7 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await neon.auth.signInWithPassword({
         email,
         password,
       });
